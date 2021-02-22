@@ -1,0 +1,287 @@
+---
+title: "Cell-type specific mediation project update"
+author: "Andrea Lane"
+date: "2/22/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(kableExtra)
+```
+
+## Outline
+
+1. Project idea reminder
+2. EM max.iter and tol parameters
+3. TOAST results
+4. EM results
+
+## Project idea reminder
+\begin{align*}
+Y~&\sim~ N(\theta_0 + \theta_1 E + \sum_k \theta_2^k m_{k}, ~\gamma^2)\\
+M~&\sim~ N(\sum_{k}m_{k}\pi_{k}, ~\sigma^2) \\
+m_{k}~&\sim~N(\beta_0^k + \beta_1^k E, ~\tau_{k}^2)
+\end{align*}
+
+ - Use TOAST to get $\beta$ initial values and reduce number of sites to go through EM
+ - Run EM algorithm one site at a time to get estimates of $\Theta$
+ - Calculate observed indirect effect $\hat{\beta_1}\hat{\theta_2}$
+ - Use percentile bootstrap to assess significance of the indirect effect for each site and cell type
+ 
+
+ 
+\newpage
+
+## EM initial values
+
+I wanted to evaluate the efficiency and accuracy of the EM algorithm to set the tolerance and maximum iteration parameters. Up to this point, I had set max.iter=500 and tol=0.001.
+
+```{r EMtest, echo=FALSE}
+setwd("/Users/andrealane/Dropbox/CelltypeSpecificMediation/Simulation")
+
+load("LikelihoodandEstimatePlotCode.RData")
+
+mytabmat <- matrix(c(test[500,2:5],test2[500,2:5],test5[2000,2:5],test3[157,2:5],test4[500,2:5],test6[1937,2:5]),nrow=6,byrow = TRUE)
+
+rownames(mytabmat) <- c("500; .01","500; .001","2000; .0001","500; .01","500; .001","2000; .0001")
+kable(mytabmat,caption="Final iteration Theta2 estimates (true values in parentheses)",col.names=c("Cell 1 (0)","Cell 2 (0)","Cell 3 (0)","Cell 4 (0.4)")) %>% 
+        kable_styling(latex_options = c("hold_position")) %>%
+        pack_rows("Initial values: true values", 1, 3) %>%
+        pack_rows("Initial values: 0", 4, 6)
+
+```
+
+Comments:
+
+ - odd that convergence is faster with 0s as initial values than true values as initial values?
+ - estimates not as good with 0s as initial values (to be expected)
+ - have been using max.iter=500, tol=.001
+
+\newpage
+
+## EM results
+
+To assess the EM/boostrap procedure, I ran it with only the mediating sites using the true values as initial values.
+
+ 
+Settings/Notes:
+
+ - N=500
+ - To account for multiple testing, the (.025/Ncell$*$Nsite,1-(.025/Ncell$*$Nsite)) quantile is used for bootstrap samples.
+ - for EM, max.iter=500 and tol=0.001
+ - EM initial values:
+     + beta: from TOAST
+     + theta: true values
+     + tau, sigma: sampled from inverse gamma distribution with mean 0.001 (based on HIRE, which states that variance initial values are sampled from inverse gamma distribution with small mean but does not specify the mean)
+     + gamma: true value 0.0004
+ - Scripts used: "Lane_Mediation_sim12821_cluster.R" and "mediation_sim_functions_1120.R" (functions script contains EM julia code)
+
+
+```{r, echo=FALSE}
+getres <- function(folder,method,Ncell,Nmed,medpi,Nmedsites,theta){
+        mat <- matrix(0,Nmed,Ncell)
+        for(i in 1:10){
+                new <- read.table(paste0("/Users/andrealane/Dropbox/CelltypeSpecificMediation/Simulation/",folder,"/",method,"_Ncell",Ncell,"_Nmed",Nmed,"_medpi",medpi,"_Nmedsites",Nmedsites,"_theta",theta,"_",i))
+        mat <- mat + new
+        }
+        mat <- apply(mat,2,rev)
+        return(mat)
+}
+
+matavg <- function(mat,medpi){
+        mat <- as.matrix(mat)
+        med <- mean(mat[,medpi])
+        nonmed <- mean(as.numeric(mat[,-medpi]))
+        return(list(med=med,nonmed=nonmed))
+}
+
+matavg2 <- function(mat,numsites){
+        mat <- as.matrix(mat)
+        med <- mean(c(mat[1:numsites,1],mat[numsites+(1:numsites),2],mat[numsites*2+(1:numsites),3],mat[numsites*3+(1:numsites),4]))
+        nonmed <- mean(c(mat[1:numsites,-1],mat[numsites+(1:numsites),-2],mat[numsites*2+(1:numsites),-3],mat[numsites*3+(1:numsites),-4]))
+        return(list(med=med,nonmed=nonmed))
+        
+}
+
+```
+
+```{r, echo=FALSE}
+### theta 0.4
+
+EMtrue1.1 <- getres("EM_truevals_021621","EM",4,1,1,1,0.4)
+EMtrue2.1 <- getres("EM_truevals_021621","EM",4,1,1,2,0.4)
+
+EMtrue1.2 <- getres("EM_truevals_021621","EM",4,1,2,1,0.4)
+EMtrue2.2 <- getres("EM_truevals_021621","EM",4,1,2,2,0.4)
+
+EMtrue1.3 <- getres("EM_truevals_021621","EM",4,1,3,1,0.4)
+EMtrue2.3 <- getres("EM_truevals_021621","EM",4,1,3,2,0.4)
+
+EMtrue1.4 <- getres("EM_truevals_021621","EM",4,1,4,1,0.4)
+EMtrue2.4 <- getres("EM_truevals_021621","EM",4,1,4,2,0.4)
+
+mat.true1 <- rbind(EMtrue1.1,EMtrue1.2,EMtrue1.3,EMtrue1.4)
+mat.true2 <- rbind(EMtrue2.1,EMtrue2.2,EMtrue2.3,EMtrue2.4)
+
+### theta 0.2 
+
+EMtrue1.1.2 <- getres("EM_truevals_021621","EM",4,1,1,1,0.2)
+EMtrue2.1.2 <- getres("EM_truevals_021621","EM",4,1,1,2,0.2)
+
+EMtrue1.2.2 <- getres("EM_truevals_021621","EM",4,1,2,1,0.2)
+EMtrue2.2.2 <- getres("EM_truevals_021621","EM",4,1,2,2,0.2)
+
+EMtrue1.3.2 <- getres("EM_truevals_021621","EM",4,1,3,1,0.2)
+EMtrue2.3.2 <- getres("EM_truevals_021621","EM",4,1,3,2,0.2)
+
+EMtrue1.4.2 <- getres("EM_truevals_021621","EM",4,1,4,1,0.2)
+EMtrue2.4.2 <- getres("EM_truevals_021621","EM",4,1,4,2,0.2)
+
+mat.true1.2 <- rbind(EMtrue1.1.2,EMtrue1.2.2,EMtrue1.3.2,EMtrue1.4.2)
+mat.true2.2 <- rbind(EMtrue2.1.2,EMtrue2.2.2,EMtrue2.3.2,EMtrue2.4.2)
+
+mymat1 <- cbind(mat.true1.2,mat.true1)
+mymat2 <- cbind(mat.true2.2,mat.true2)
+
+
+kable(mymat1,caption="1 site - 200 bootstrap",col.names=c("Cell 1","Cell 2","Cell 3","Cell 4","Cell 1","Cell 2","Cell 3","Cell 4"),row.names = FALSE)%>% 
+        kable_styling(latex_options = c("hold_position")) %>% 
+        add_header_above(c("Theta = 0.2" = 4, "Theta = 0.4" = 4)) %>%
+        column_spec(1, bold = c(T,F,F,F))%>% 
+        column_spec(2, bold = c(F,T,F,F))%>% 
+        column_spec(3, bold = c(F,F,T,F))%>% 
+        column_spec(4, bold = c(F,F,F,T)) %>% 
+        column_spec(5, bold = c(T,F,F,F))%>% 
+        column_spec(6, bold = c(F,T,F,F))%>% 
+        column_spec(7, bold = c(F,F,T,F))%>% 
+        column_spec(8, bold = c(F,F,F,T))
+
+
+kable(mymat2,caption="2 sites - 200 bootstrap",col.names=c("Cell 1","Cell 2","Cell 3","Cell 4","Cell 1","Cell 2","Cell 3","Cell 4"),row.names = FALSE)%>% 
+        kable_styling(latex_options = c("hold_position")) %>% 
+        add_header_above(c("Theta = 0.2" = 4, "Theta = 0.4" = 4)) %>%
+        column_spec(1, bold = c(rep(T,2),rep(F,6)))%>%
+        column_spec(2, bold = (c(rep(F,2),rep(T,2),rep(F,4))))%>%
+        column_spec(3, bold = (c(rep(F,4),rep(T,2),rep(F,2))))%>%
+        column_spec(4, bold = (c(rep(F,6),rep(T,2))))%>%
+        column_spec(5, bold = c(rep(T,2),rep(F,6)))%>%
+        column_spec(6, bold = (c(rep(F,2),rep(T,2),rep(F,4))))%>%
+        column_spec(7, bold = (c(rep(F,4),rep(T,2),rep(F,2))))%>%
+        column_spec(8, bold = (c(rep(F,6),rep(T,2)))) %>% 
+        row_spec(c(2,4,6),hline_after = TRUE)
+
+
+```
+
+
+```{r, echo=FALSE}
+## power/type 1 error table
+
+## get avg among mediating and non-mediating sites
+mat <- matrix(unlist(c(matavg2(mat.true1.2,1),
+matavg2(mat.true2.2,2),
+matavg2(mat.true1,1),matavg2(mat.true2,2))),nrow=2,ncol=4)
+
+mat <- round(mat/1000,3)
+
+rownames(mat) <- c("Power","Type 1 error")
+
+kable(mat,caption="Average across mediating and nonmediating sites/cell types - 200 bootstrap",row.names = TRUE)%>% 
+        kable_styling(latex_options = c("hold_position")) %>%
+        add_header_above(c(" " = 1,"Theta = 0.2" = 2,"Theta = 0.4" = 2)) %>%
+        add_header_above(c(" " = 1,"1 site" = 1,"2 sites" = 1,"1 site" = 1,"2 sites" = 1))
+
+
+
+
+```
+
+
+```{r, echo=FALSE}
+### 1000 bootstrap
+
+EMtrue1.1.4 <- getres("1000Boot_truevals","EM",4,1,1,1,0.4)
+EMtrue1.2.4 <- getres("1000Boot_truevals","EM",4,1,2,1,0.4)
+EMtrue1.3.4 <- getres("1000Boot_truevals","EM",4,1,3,1,0.4)
+EMtrue1.4.4 <- getres("1000Boot_truevals","EM",4,1,4,1,0.4)
+
+EMtrue1.1.2 <- getres("1000Boot_truevals","EM",4,1,1,1,0.2)
+EMtrue1.2.2 <- getres("1000Boot_truevals","EM",4,1,2,1,0.2)
+EMtrue1.3.2 <- getres("1000Boot_truevals","EM",4,1,3,1,0.2)
+EMtrue1.4.2 <- getres("1000Boot_truevals","EM",4,1,4,1,0.2)
+
+mat.true1 <- rbind(EMtrue1.1.4,EMtrue1.2.4,EMtrue1.3.4,EMtrue1.4.4)
+mat.true2 <- rbind(EMtrue1.1.2,EMtrue1.2.2,EMtrue1.3.2,EMtrue1.4.2)
+
+mymat <- cbind(mat.true2,mat.true1)
+
+kable(mymat,caption="1 site - 1000 bootstrap",col.names=c("Cell 1","Cell 2","Cell 3","Cell 4","Cell 1","Cell 2","Cell 3","Cell 4"),row.names = FALSE)%>% 
+        kable_styling(latex_options = c("hold_position")) %>% 
+        add_header_above(c("Theta = 0.2" = 4, "Theta = 0.4" = 4)) %>%
+        column_spec(1, bold = c(T,F,F,F))%>% 
+        column_spec(2, bold = c(F,T,F,F))%>% 
+        column_spec(3, bold = c(F,F,T,F))%>% 
+        column_spec(4, bold = c(F,F,F,T)) %>% 
+        column_spec(5, bold = c(T,F,F,F))%>% 
+        column_spec(6, bold = c(F,T,F,F))%>% 
+        column_spec(7, bold = c(F,F,T,F))%>% 
+        column_spec(8, bold = c(F,F,F,T))
+
+```
+
+```{r, echo=FALSE}
+
+mat <- matrix(unlist(c(matavg2(mat.true2,1),
+matavg2(mat.true1,1))),nrow=2,ncol=2)
+
+mat <- round(mat/1000,3)
+
+rownames(mat) <- c("Power","Type 1 error")
+
+kable(mat,caption="Average across mediating and nonmediating sites/cell types - 1000 bootstrap",row.names = TRUE)%>% 
+        kable_styling(latex_options = c("hold_position")) %>%
+        add_header_above(c(" " = 1,"Theta = 0.2" = 1,"Theta = 0.4" = 1))
+
+
+```
+
+For reference, I also present the power and type 1 error from the last set of results where I used 0 for the initial theta values.
+
+```{r, echo=FALSE}
+EM1.1 <- getres("CompareSiteandCell_020921","EM",4,1,1,1,0.4)
+EM2.1 <- getres("CompareSiteandCell_020921","EM",4,1,1,2,0.4)
+EM3.1 <- getres("CompareSiteandCell_020921","EM",4,1,1,3,0.4)
+
+EM1.2 <- getres("CompareSiteandCell_020921","EM",4,1,2,1,0.4)
+EM2.2 <- getres("CompareSiteandCell_020921","EM",4,1,2,2,0.4)
+EM3.2 <- getres("CompareSiteandCell_020921","EM",4,1,2,3,0.4)
+
+EM1.3 <- getres("CompareSiteandCell_020921","EM",4,1,3,1,0.4)
+EM2.3 <- getres("CompareSiteandCell_020921","EM",4,1,3,2,0.4)
+EM3.3 <- getres("CompareSiteandCell_020921","EM",4,1,3,3,0.4)
+
+EM1.4 <- getres("CompareSiteandCell_020921","EM",4,1,4,1,0.4)
+EM2.4 <- getres("CompareSiteandCell_020921","EM",4,1,4,2,0.4)
+EM3.4 <- getres("CompareSiteandCell_020921","EM",4,1,4,3,0.4)
+
+EM1 <- rbind(EM1.1,EM1.2,EM1.3,EM1.4)
+EM2 <- rbind(EM2.1,EM2.2,EM2.3,EM2.4)
+EM3 <- rbind(EM3.1,EM3.2,EM3.3,EM3.4)
+
+mat <- matrix(unlist(c(matavg2(EM1,1),
+matavg2(EM2,2),matavg2(EM3,3))),nrow=2,ncol=3)
+
+mat <- round(mat/1000,3)
+
+rownames(mat) <- c("Power","Type 1 error")
+
+kable(mat,caption="Average across mediating and nonmediating sites/cell types - 0s as initial values (theta=0.4)",row.names = TRUE)%>% 
+        kable_styling(latex_options = c("hold_position")) %>%
+        add_header_above(c(" " = 1,"1 site" = 1,"2 sites" = 1,"3 sites" = 1))
+
+
+
+
+```
