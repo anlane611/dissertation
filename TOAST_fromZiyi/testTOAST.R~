@@ -1,0 +1,22 @@
+library(TOAST)
+load("testTOAST.rda")
+source("fitModel.R")
+
+design <- data.frame(E = as.factor(E))
+Prop <- trueProp
+colnames(Prop) <- c("CD8T","CD4T","NK","Bcell") ## made up because need colnames
+Design_out <- makeDesign(design, Prop)
+
+Design_out$design_matrix ## why is there only 7 columns? Do we have intercept in the model? I thought we don't have intercept?
+
+
+fm <- fitModel(Design_out, Y.raw)
+
+coefs <- fm$coefs ## dim: 2*Ncell X NCpG
+
+fm$all_coefs
+fm$all_cell_types
+
+### following two lines don't work
+res <- csTest(fm, coef="E", sort = FALSE)
+res <- csTest(fm, coef="E", cell_type="CD8T", sort = FALSE)
