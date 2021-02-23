@@ -13,10 +13,10 @@ library(kableExtra)
 
 ## Outline
 
-1. Project idea reminder
-2. EM max.iter and tol parameters
-3. TOAST results
-4. EM results
+1. Project idea
+2. EM initial value comparison
+3. Bootstrap results using true values as initial values
+4. Next steps
 
 ## Project idea reminder
 \begin{align*}
@@ -36,32 +36,180 @@ m_{k}~&\sim~N(\beta_0^k + \beta_1^k E, ~\tau_{k}^2)
 
 ## EM initial values
 
-I wanted to evaluate the efficiency and accuracy of the EM algorithm to set the tolerance and maximum iteration parameters. Up to this point, I had set max.iter=500 and tol=0.001.
+To evaluate the estimates obtained from EM depending on the initial values, I varied the mediating cell type and looked at 2 different mediating CpG sites. I used 4 different initial value cases (note that the true value for the mediating $\theta_2^k=0.4$):
 
-```{r EMtest, echo=FALSE}
-setwd("/Users/andrealane/Dropbox/CelltypeSpecificMediation/Simulation")
+ - Case 1: 0 for all $\theta_2^k$
+ - Case 2: 0.2 for all $\theta_2^k$
+ - Case 3: 0.1 for non-mediating cell types, 0.3 for mediating cell type
+ - Case 4: 0 for non-mediating cell types, 0.4 for mediating cell type (true values)
 
-load("LikelihoodandEstimatePlotCode.RData")
+```{r, echo=FALSE}
+setwd("/Users/andrealane/Dropbox/CelltypeSpecificMediation/Simulation/dissertation/")
 
-mytabmat <- matrix(c(test[500,2:5],test2[500,2:5],test5[2000,2:5],test3[157,2:5],test4[500,2:5],test6[1937,2:5]),nrow=6,byrow = TRUE)
+load("InitialValueAnalysis.RData")
 
-rownames(mytabmat) <- c("500; .01","500; .001","2000; .0001","500; .01","500; .001","2000; .0001")
-kable(mytabmat,caption="Final iteration Theta2 estimates (true values in parentheses)",col.names=c("Cell 1 (0)","Cell 2 (0)","Cell 3 (0)","Cell 4 (0.4)")) %>% 
-        kable_styling(latex_options = c("hold_position")) %>%
-        pack_rows("Initial values: true values", 1, 3) %>%
-        pack_rows("Initial values: 0", 4, 6)
+par(mfrow=c(2,1), mai=c(0.8,0.8,0.3,0.5))
+
+plot(site9cell1.lowvar[,1],ylim=c(0,1),pch=15,col="red",xaxt="n",ylab="Theta 2 estimate",xlab="",main="Mediating cell estimates for each cell type - Site 1",type="b",lty=1)
+lines(site9cell2.lowvar[,2],pch=16,col="blue",type="b",lty=1)
+lines(site9cell3.lowvar[,3],pch=17,col="green",type="b",lty=1)
+lines(site9cell4.lowvar[,4],pch=18,col="black",type="b",lty=1)
+abline(h=0.4,col="black")
+axis(side = 1, at = seq(0, 4, by = 1))
+legend(1, 1, legend=c("Cell 1", "Cell 2", "Cell 3", "Cell 4"),
+       col=c("red","blue","green","black"), pch=c(15,16,17,18), horiz = TRUE)
+
+plot(site5cell1.lowvar[,1],ylim=c(0,1),pch=15,col="red",xaxt="n",ylab="Theta 2 estimate",xlab="Initial value case",main="Mediating cell estimates for each cell type - Site 2",type="b",lty=1)
+lines(site5cell2.lowvar[,2],pch=16,col="blue",type="b",lty=1)
+lines(site5cell3.lowvar[,3],pch=17,col="green",type="b",lty=1)
+lines(site5cell4.lowvar[,4],pch=18,col="black",type="b",lty=1)
+abline(h=0.4,col="black")
+axis(side = 1, at = seq(0, 4, by = 1))
 
 ```
 
+
+\newpage 
+
+Non-mediating cell type estimates (true value 0 in all cases)
+
+ - Case 1: 0 for all $\theta_2^k$
+ - Case 2: 0.2 for all $\theta_2^k$
+ - Case 3: 0.1 for non-mediating cell types, 0.3 for mediating cell type
+ - Case 4: 0 for non-mediating cell types, 0.4 for mediating cell type (true values)
+
+
+
+```{r, echo=FALSE}
+par(mfrow=c(4,2), mai=c(0.1,0.3,0.1,0.3))
+
+plot(site9cell1.lowvar[,2],ylim=c(-1,1),pch=16,col="blue",xaxt="n",ylab="Theta 2 estimate",xlab="",type="b",lty=1)
+abline(h=0,col="black")
+lines(site9cell1.lowvar[,3],pch=17,col="green",type="b",lty=1)
+lines(site9cell1.lowvar[,4],pch=18,col="black",type="b",lty=1)
+legend(1, 1, legend=c("Cell 2", "Cell 3", "Cell 4"),
+       col=c("blue","green","black"), pch=c(16,17,18),horiz =TRUE)
+mtext("Cell 1 mediator - Site 1", side=3, line=0,cex=0.5)
+
+plot(site5cell1.lowvar[,2],ylim=c(-1,1),pch=16,col="blue",xaxt="n",ylab="",xlab="",type="b",lty=1)
+abline(h=0,col="black")
+lines(site5cell1.lowvar[,3],pch=17,col="green",type="b",lty=1)
+lines(site5cell1.lowvar[,4],pch=18,col="black",type="b",lty=1)
+mtext("Cell 1 mediator - Site 2", side=3, line=0,cex=0.5)
+
+
+
+plot(site9cell2.lowvar[,1],ylim=c(-1,1),pch=15,col="red",xaxt="n",ylab="Theta 2 estimate",xlab="",type="b",lty=1)
+abline(h=0,col="black")
+lines(site9cell2.lowvar[,3],pch=17,col="green",type="b",lty=1)
+lines(site9cell2.lowvar[,4],pch=18,col="black",type="b",lty=1)
+legend(1, 1, legend=c("Cell 1", "Cell 3", "Cell 4"),
+       col=c("red","green","black"), pch=c(15,17,18),horiz =TRUE)
+mtext("Cell 2 mediator - Site 1", side=3, line=0,cex=0.5)
+
+
+plot(site5cell2.lowvar[,1],ylim=c(-1,1),pch=15,col="red",xaxt="n",ylab="",xlab="",type="b",lty=1)
+abline(h=0,col="black")
+lines(site5cell2.lowvar[,3],pch=17,col="green",type="b",lty=1)
+lines(site5cell2.lowvar[,4],pch=18,col="black",type="b",lty=1)
+mtext("Cell 2 mediator - Site 2", side=3, line=0,cex=0.5)
+
+
+
+plot(site9cell3.lowvar[,1],ylim=c(-1,1),pch=15,col="red",xaxt="n",ylab="Theta 2 estimate",xlab="",type="b",lty=1)
+abline(h=0,col="black")
+lines(site9cell3.lowvar[,2],pch=16,col="blue",type="b",lty=1)
+lines(site9cell3.lowvar[,4],pch=18,col="black",type="b",lty=1)
+legend(1, 1, legend=c("Cell 1", "Cell 2", "Cell 4"),
+       col=c("red","blue","black"), pch=c(15,16,18),horiz =TRUE)
+mtext("Cell 3 mediator - Site 1", side=3, line=0,cex=0.5)
+
+
+
+plot(site5cell3.lowvar[,1],ylim=c(-1,1),pch=15,col="red",xaxt="n",ylab="",xlab="",type="b",lty=1)
+abline(h=0,col="black")
+lines(site5cell3.lowvar[,2],pch=16,col="blue",type="b",lty=1)
+lines(site5cell3.lowvar[,4],pch=18,col="black",type="b",lty=1)
+mtext("Cell 3 mediator - Site 2", side=3, line=0,cex=0.5)
+
+
+
+plot(site9cell4.lowvar[,1],ylim=c(-1,1),pch=15,col="red",xaxt="n",ylab="Theta 2 estimate",xlab="",type="b",lty=1)
+abline(h=0,col="black")
+lines(site9cell4.lowvar[,2],pch=16,col="blue",type="b",lty=1)
+lines(site9cell4.lowvar[,3],pch=17,col="green",type="b",lty=1)
+legend(1, 1, legend=c("Cell 1", "Cell 2", "Cell 3"),
+       col=c("red","blue","green"), pch=c(15,16,17),horiz =TRUE)
+mtext("Cell 4 mediator - Site 1", side=3, line=0,cex=0.5)
+
+
+plot(site5cell4.lowvar[,1],ylim=c(-1,1),pch=15,col="red",xaxt="n",ylab="",xlab="",type="b",lty=1)
+abline(h=0,col="black")
+lines(site5cell4.lowvar[,2],pch=16,col="blue",type="b",lty=1)
+lines(site5cell4.lowvar[,3],pch=17,col="green",type="b",lty=1)
+mtext("Cell 4 mediator - Site 2", side=3, line=0,cex=0.5)
+
+
+```
+
+
 Comments:
 
- - odd that convergence is faster with 0s as initial values than true values as initial values?
- - estimates not as good with 0s as initial values (to be expected)
- - have been using max.iter=500, tol=.001
+ - for the most part, it seems case 3 and case 4 results are pretty similar, which is good.
+ - I don't understand what causes differences between sites? For example in the top row of the non-mediator plots, the two sites are quite different.
+ 
 
 \newpage
 
-## EM results
+Results in table form, if that's preferable:
+
+```{r, echo=FALSE}
+tabmat1 <- rbind(site9cell1.lowvar[1,],site9cell2.lowvar[1,],
+        site9cell3.lowvar[1,],site9cell4.lowvar[1,],
+site9cell1.lowvar[2,],site9cell2.lowvar[2,],
+        site9cell3.lowvar[2,],site9cell4.lowvar[2,],
+site9cell1.lowvar[3,],site9cell2.lowvar[3,],
+        site9cell3.lowvar[3,],site9cell4.lowvar[3,],
+site9cell1.lowvar[4,],site9cell2.lowvar[4,],
+        site9cell3.lowvar[4,],site9cell4.lowvar[4,]
+)
+
+tabmat2 <- rbind(site5cell1.lowvar[1,],site5cell2.lowvar[1,],
+        site5cell3.lowvar[1,],site5cell4.lowvar[1,],
+site5cell1.lowvar[2,],site5cell2.lowvar[2,],
+        site5cell3.lowvar[2,],site5cell4.lowvar[2,],
+site5cell1.lowvar[3,],site5cell2.lowvar[3,],
+        site5cell3.lowvar[3,],site5cell4.lowvar[3,],
+site5cell1.lowvar[4,],site5cell2.lowvar[4,],
+        site5cell3.lowvar[4,],site5cell4.lowvar[4,]
+)
+
+tabmat <- round(cbind(tabmat1,tabmat2),2)
+
+kable(tabmat,caption="Theta2 estimates",col.names=c("Cell 1","Cell 2","Cell 3","Cell 4","Cell 1","Cell 2","Cell 3","Cell 4"),row.names = FALSE)%>% 
+        kable_styling(latex_options = c("hold_position")) %>% 
+        add_header_above(c("Site 1" = 4, "Site 2" = 4)) %>%
+        column_spec(1, bold = rep(c(T,F,F,F),4))%>% 
+        column_spec(2, bold = rep(c(F,T,F,F),4))%>% 
+        column_spec(3, bold = rep(c(F,F,T,F),4))%>% 
+        column_spec(4, bold = rep(c(F,F,F,T),4)) %>% 
+        column_spec(5, bold = rep(c(T,F,F,F),4))%>% 
+        column_spec(6, bold = rep(c(F,T,F,F),4))%>% 
+        column_spec(7, bold = rep(c(F,F,T,F),4))%>% 
+        column_spec(8, bold = rep(c(F,F,F,T),4)) %>% 
+        pack_rows("Initial value case 1: 0 for all theta2",1,4) %>% 
+        pack_rows("case 2: 0.2 for all theta2",5,8) %>% 
+        pack_rows("case 3: 0.1 non-med, 0.3 med",9,12) %>% 
+        pack_rows("case 4: 0 non-med, 0.4 med (true values)",13,16)
+
+
+
+```
+
+
+\newpage
+
+## Bootstrap results
 
 To assess the EM/boostrap procedure, I ran it with only the mediating sites using the true values as initial values.
 
@@ -79,11 +227,18 @@ Settings/Notes:
  - Scripts used: "Lane_Mediation_sim12821_cluster.R" and "mediation_sim_functions_1120.R" (functions script contains EM julia code)
 
 
+Tables 2 and 3 show results from 1 and 2 sites with mediating effect sizes 0.2 and 0.4. Table 4 summarizes the results from tables 2 and 3 by averaging the non-mediating sites (type 1 error) and the mediating sites (power).
+
+Tables 5 and 6 show results for one CpG site when increasing the number of bootstrap samples from 200 to 1000.
+
+Table 7 summarizes the results from my last report for comparison. Here the initial values were all 0 rather than the true values.
+
+
 ```{r, echo=FALSE}
 getres <- function(folder,method,Ncell,Nmed,medpi,Nmedsites,theta){
         mat <- matrix(0,Nmed,Ncell)
         for(i in 1:10){
-                new <- read.table(paste0("/Users/andrealane/Dropbox/CelltypeSpecificMediation/Simulation/",folder,"/",method,"_Ncell",Ncell,"_Nmed",Nmed,"_medpi",medpi,"_Nmedsites",Nmedsites,"_theta",theta,"_",i))
+                new <- read.table(paste0("/Users/andrealane/Dropbox/CelltypeSpecificMediation/Simulation/Results/",folder,"/",method,"_Ncell",Ncell,"_Nmed",Nmed,"_medpi",medpi,"_Nmedsites",Nmedsites,"_theta",theta,"_",i))
         mat <- mat + new
         }
         mat <- apply(mat,2,rev)
@@ -109,7 +264,6 @@ matavg2 <- function(mat,numsites){
 
 ```{r, echo=FALSE}
 ### theta 0.4
-
 EMtrue1.1 <- getres("EM_truevals_021621","EM",4,1,1,1,0.4)
 EMtrue2.1 <- getres("EM_truevals_021621","EM",4,1,1,2,0.4)
 
@@ -247,7 +401,6 @@ kable(mat,caption="Average across mediating and nonmediating sites/cell types - 
 
 ```
 
-For reference, I also present the power and type 1 error from the last set of results where I used 0 for the initial theta values.
 
 ```{r, echo=FALSE}
 EM1.1 <- getres("CompareSiteandCell_020921","EM",4,1,1,1,0.4)
@@ -282,6 +435,13 @@ kable(mat,caption="Average across mediating and nonmediating sites/cell types - 
         add_header_above(c(" " = 1,"1 site" = 1,"2 sites" = 1,"3 sites" = 1))
 
 
-
-
 ```
+
+\newpage
+
+## Next steps
+
+ - Find a way to get initial values (i.e. try TOAST M ~ Y)
+ - Increase variance
+ - Use bootstrap with TCA estimates
+ - Add covariate(s)
