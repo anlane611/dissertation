@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.14159265-2.6-1.40.21 (TeX Live 2020) (preloaded format=pdflatex 2021.2.10)  22 FEB 2021 22:50
+This is pdfTeX, Version 3.14159265-2.6-1.40.21 (TeX Live 2020) (preloaded format=pdflatex 2021.2.10)  24 FEB 2021 20:05
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -476,7 +476,7 @@ File: l3backend-pdftex.def 2021-02-06 L3 backend support: PDF output (pdfTeX)
 \l__pdf_internal_box=\box67
 ) (./ResultsSummary_0221.aux
 
-LaTeX Warning: Label `tab:unnamed-chunk-5' multiply defined.
+LaTeX Warning: Label `tab:unnamed-chunk-7' multiply defined.
 
 )
 \openout1 = `ResultsSummary_0221.aux'.
@@ -631,12 +631,30 @@ File: ResultsSummary_0221_files/figure-latex/unnamed-chunk-2-1.pdf Graphic file
 Package pdftex.def Info: ResultsSummary_0221_files/figure-latex/unnamed-chunk-2
 -1.pdf  used on input line 165.
 (pdftex.def)             Requested size: 469.75386pt x 325.2142pt.
-[3 <./ResultsSummary_0221_files/figure-latex/unnamed-chunk-2-1.pdf>] [4pdfTeX w
+[3 <./ResultsSummary_0221_files/figure-latex/unnamed-chunk-2-1.pdf>]
+<ResultsSummary_0221_files/figure-latex/unnamed-chunk-3-1.pdf, id=69, 469.755pt
+ x 325.215pt>
+File: ResultsSummary_0221_files/figure-latex/unnamed-chunk-3-1.pdf Graphic file
+ (type pdf)
+<use ResultsSummary_0221_files/figure-latex/unnamed-chunk-3-1.pdf>
+Package pdftex.def Info: ResultsSummary_0221_files/figure-latex/unnamed-chunk-3
+-1.pdf  used on input line 196.
+(pdftex.def)             Requested size: 469.75386pt x 325.2142pt.
+[4 <./ResultsSummary_0221_files/figure-latex/unnamed-chunk-3-1.pdf>]
+<ResultsSummary_0221_files/figure-latex/unnamed-chunk-4-1.pdf, id=79, 469.755pt
+ x 325.215pt>
+File: ResultsSummary_0221_files/figure-latex/unnamed-chunk-4-1.pdf Graphic file
+ (type pdf)
+<use ResultsSummary_0221_files/figure-latex/unnamed-chunk-4-1.pdf>
+Package pdftex.def Info: ResultsSummary_0221_files/figure-latex/unnamed-chunk-4
+-1.pdf  used on input line 204.
+(pdftex.def)             Requested size: 469.75386pt x 325.2142pt.
+[5 <./ResultsSummary_0221_files/figure-latex/unnamed-chunk-4-1.pdf>] [6pdfTeX w
 arning (ext4): destination with the same identifier (name{table.1}) has been al
 ready used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   
-l.237 \newpage
+l.263 \newpage
               ]
 
 LaTeX Warning: `!h' float specifier changed to `!ht'.
@@ -653,36 +671,36 @@ LaTeX Warning: `!h' float specifier changed to `!ht'.
 
 LaTeX Warning: `!h' float specifier changed to `!ht'.
 
-[5pdfTeX warning (ext4): destination with the same identifier (name{table.2}) h
+[7pdfTeX warning (ext4): destination with the same identifier (name{table.2}) h
 as been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   
-l.412 \newpage
-              ] [6pdfTeX warning (ext4): destination with the same identifier (
+l.438 \newpage
+              ] [8pdfTeX warning (ext4): destination with the same identifier (
 name{table.3}) has been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   
-l.430 \end{document}
+l.456 \end{document}
                     pdfTeX warning (ext4): destination with the same identifier
  (name{table.4}) has been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   
-l.430 \end{document}
+l.456 \end{document}
                     pdfTeX warning (ext4): destination with the same identifier
  (name{table.5}) has been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   
-l.430 \end{document}
+l.456 \end{document}
                     pdfTeX warning (ext4): destination with the same identifier
  (name{table.6}) has been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   
-l.430 \end{document}
+l.456 \end{document}
                     pdfTeX warning (ext4): destination with the same identifier
  (name{table.7}) has been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   
-l.430 \end{document}
+l.456 \end{document}
                     ] (./ResultsSummary_0221.aux)
 
 LaTeX Warning: There were multiply-defined labels.
@@ -691,10 +709,10 @@ Package rerunfilecheck Info: File `ResultsSummary_0221.out' has not changed.
 (rerunfilecheck)             Checksum: 383FCEBD93C740C7DB204C8766B98BE0;598.
  ) 
 Here is how much of TeX's memory you used:
- 11512 strings out of 481288
- 168574 string characters out of 5916059
+ 11526 strings out of 481288
+ 169316 string characters out of 5916059
  484375 words of memory out of 5000000
- 28150 multiletter control sequences out of 15000+600000
+ 28160 multiletter control sequences out of 15000+600000
  443189 words of font info for 65 fonts, out of 8000000 for 9000
  14 hyphenation exceptions out of 8191
  71i,9n,74p,253b,328s stack positions out of 5000i,500n,10000p,200000b,80000s
@@ -714,10 +732,10 @@ realane/Library/TinyTeX/texmf-dist/fonts/type1/public/lm/lmr12.pfb></Users/andr
 ealane/Library/TinyTeX/texmf-dist/fonts/type1/public/lm/lmr17.pfb></Users/andre
 alane/Library/TinyTeX/texmf-dist/fonts/type1/public/lm/lmr7.pfb></Users/andreal
 ane/Library/TinyTeX/texmf-dist/fonts/type1/public/lm/lmsy10.pfb>
-Output written on ResultsSummary_0221.pdf (6 pages, 189561 bytes).
+Output written on ResultsSummary_0221.pdf (8 pages, 205866 bytes).
 PDF statistics:
- 139 PDF objects out of 1000 (max. 8388607)
- 115 compressed objects within 2 object streams
- 28 named destinations out of 1000 (max. 500000)
- 51 words of extra memory for PDF output out of 10000 (max. 10000000)
+ 161 PDF objects out of 1000 (max. 8388607)
+ 131 compressed objects within 2 object streams
+ 30 named destinations out of 1000 (max. 500000)
+ 61 words of extra memory for PDF output out of 10000 (max. 10000000)
 
