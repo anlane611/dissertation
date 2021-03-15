@@ -32,16 +32,14 @@ if(length(args)==0){
   }
 }
 
-## HERE IS A TEST CHANGE FOR GITHUB!!!
-
 
 #-------------------------
 # Setup parameters
 #-------------------------
 
 library(JuliaCall)
-#julia <- JuliaCall::julia_setup("/apps/julia-1.5.0/bin")
-julia <- JuliaCall::julia_setup("/Applications/JuliaPro-1.5.2-1.app/Contents/Resources/julia/Contents/Resources/julia/bin")
+julia <- JuliaCall::julia_setup("/apps/julia-1.5.0/bin")
+#julia <- JuliaCall::julia_setup("/Applications/JuliaPro-1.5.2-1.app/Contents/Resources/julia/Contents/Resources/julia/bin")
 julia_library("Distributed")
 
 # Here we create our parallel julia processes
@@ -53,37 +51,37 @@ julia_command("@everywhere using SharedArrays")
 
 library(RcppEigen)
 library(TOAST)
-source("fitModel.R")
+source("TOAST_fromZiyi/fitModel.R")
 library(RefFreeEWAS)
 library(EpiDISH)
 library(TCA)
 #library(MICS)
 source("mediation_sim_functions_1120.R")
-load("BloodPureDNAmethy_4ct.rda")
+load("TOAST_fromZiyi/BloodPureDNAmethy_4ct.rda")
 
 
 
-n_sim <- 1          #number of replicates in this script
-i_seed <- 1          #seed that changes for each replicate for new observed data
-myseed <- 123        #seed for selecting CpG sites, mediating sites, mediating cell types
-
-Nsample <- 500       #total sample size
-Ncell <- 4           #number of cell types
-Ncpg <- 10           #number of CpG sites
-
-med_num_M <- 2       #number of CpG sites that are mediators
-med_num_cell <- 1    #number of cell types that are mediators
-med_pi <- 2          #which cell type is the mediator (for testing purposes 2/8)
-beta_effect <- 1.4   #relationship between mediator M and exposure
-theta_effect <- 0.4  #relationship between mediator M and outcome
-
-is_pi_med <- FALSE   #designates whether or not pi is a mediator
-is_M_med <- TRUE     #designates whether or not M is a mediator
-
-med_exp_pi <- 1      #relationship between mediator pi and exposure
-med_out_pi <- 1      #relationship between mediator pi and outcome
-
-alpha <- 0.000001    #significance threshold for beta/TOAST to move into EM
+# n_sim <- 1          #number of replicates in this script
+# i_seed <- 1          #seed that changes for each replicate for new observed data
+# myseed <- 123        #seed for selecting CpG sites, mediating sites, mediating cell types
+# 
+# Nsample <- 500       #total sample size
+# Ncell <- 4           #number of cell types
+# Ncpg <- 10           #number of CpG sites
+# 
+# med_num_M <- 1       #number of CpG sites that are mediators
+# med_num_cell <- 1    #number of cell types that are mediators
+# med_pi <- 4          #which cell type is the mediator (for testing purposes 2/8)
+# beta_effect <- 1.4   #relationship between mediator M and exposure
+# theta_effect <- 0.4  #relationship between mediator M and outcome
+# 
+# is_pi_med <- FALSE   #designates whether or not pi is a mediator
+# is_M_med <- TRUE     #designates whether or not M is a mediator
+# 
+# med_exp_pi <- 1      #relationship between mediator pi and exposure
+# med_out_pi <- 1      #relationship between mediator pi and outcome
+# 
+# alpha <- 0.000001    #significance threshold for beta/TOAST to move into EM
 
 
 
@@ -108,7 +106,8 @@ pure.mean <- pure.mean0[rows,]
 
 #set which CpG sites are mediators
 #med.sites <- sort(sample(seq(1,nrow(pure.mean)),round(med_perc_M*nrow(pure.mean))))
-med.sites <- sort(sample(seq(1,nrow(pure.mean)),med_num_M))
+#med.sites <- sort(sample(seq(1,nrow(pure.mean)),med_num_M))
+med.sites <- 5
 nonmed.sites <- setdiff(seq(1,nrow(pure.mean)),med.sites)
 
 
@@ -130,8 +129,7 @@ for(i in 1:nrow(cpg.celltype.thetas)) {
   cpg.celltype.thetas[i, med.pi] = theta_effect
 }
 
-sig.list <- tca.sig <- tca.rank <- vector("list", n_sim)
-alpha_tca <- .05/(Ncell*med_num_M)    #significance threshold for TCA models
+sig.list <- comp.sig <- vector("list", n_sim)
 
 
 pure.sd = pure.sd0[rows,]
@@ -180,18 +178,33 @@ for (sim in 1:n_sim) {
   #---------------------------------------------
   #  Get TOAST estimates
   #---------------------------------------------
-  
-  design <- data.frame(E = as.factor(E))
+
   Prop <- trueProp
   colnames(Prop) <- c("CD8T","BCell","Mono","Gran")[1:Ncell] ## need colnames
-  Design_out <- makeDesign(design, Prop)
-  
-  fm <- fitModel(Design_out, Y.raw)
   
   ## estimates for E[M|A]
-  coefs <- fm$coefs ## dim: 2*Ncell X NCpG
 
-  res <- csTest(fm, coef="E1", sort = FALSE)
+  # ## estimates for E[M|Y]
+  # design <- data.frame(O = O)
+  # Design_out <- makeDesign(design, Prop)
+  # 
+  # fm <- fitModel(Design_out, Y.raw)
+  # 
+  # coefs.O <- fm$coefs ## dim: 2*Ncell X NCpG
+  # 
+  # res <- csTest(fm, coef=c("O"), sort = FALSE)
+  
+  ## compare to MICS - E[M|E,Y]
+  # design <- data.frame(O=O,E=as.factor(E))
+  # Design_out <- makeDesign(design, Prop)
+  # 
+  # fm <- fitModel(Design_out, Y.raw)
+  # 
+  # coefs.OE <- fm$coefs ## dim: 2*Ncell X NCpG
+  # 
+  # res <- csTest(fm, coef=c("O"), sort = FALSE)
+  
+  
 
   
   #---------------------------------------------
@@ -204,7 +217,8 @@ for (sim in 1:n_sim) {
   #print(sites)
   #nsites <- length(sites)
   M <- matrix(Y.raw[med.sites,],ncol=Nsample)
-  coefs.EM <- matrix(coefs[,med.sites],nrow=Ncell*2) #will need to change w/ covariates
+  coefs <- getTOAST(E,O,M,Prop)$allbetas
+  coefs.EM <- matrix(coefs,nrow=Ncell*2) #will need to change w/ covariates
   
   #get EM/bootstrap results
   sig.list[[sim]] <- julia_call("EMBoot", M, O, E, coefs.EM, Prop, med.pi, theta_effect)
@@ -220,49 +234,41 @@ for (sim in 1:n_sim) {
   rownames(M) <- 1:med_num_M
   
   tca.mod <- tca(M,trueProp)
-  est.Mik <- tensor(M,tca.mod)
+  est.Mik <- tensor(M,tca.mod) #estimated M_ik values (list of length Ncell, each of length Nsite)
 
-  theta2 <- pvals <- matrix(0,med_num_M, Ncell)
-  theta0 <- c()
-  theta1 <- c()
-  if(Ncell==4){
-    for(i in 1:med_num_M){
-      mod <- summary(fastLm(O~E+est.Mik[[1]][i,]+
-                              est.Mik[[2]][i,]+
-                              est.Mik[[3]][i,]+
-                              est.Mik[[4]][i,]))
-      pvals[i,] <- mod$coefficients[3:(Ncell+2),4]
-      theta2[i,] <- mod$coefficients[3:(Ncell+2),1]
-      theta1[i] <- mod$coefficients[2,1]
-    }
+  b <- 1000
+  bootIE.tca <- matrix(NA,nrow=b,ncol=Ncell) #indirect effect for each bootstrap sample
+  bootIE.toast <- matrix(NA,nrow=b,ncol=Ncell) #indirect effect for each bootstrap sample
+  for(i in 1:b){
+      getIndex <- sample(1:Nsample,Nsample,replace=TRUE)
+      Eb <- E[getIndex]
+      Mb <- matrix(M[getIndex],ncol=Nsample)
+      Ob <- O[getIndex]
+      propb <- trueProp[getIndex,]
+      
+      rownames(propb) <- colnames(Mb) <- 1:Nsample
+      colnames(propb) <- 1:Ncell
+      rownames(Mb) <- 1:med_num_M
+      
+      bootIE.toast[i,] <- getTOAST(Eb,Ob,Mb,propb)$indef
+      
+      tca.modb <- tca(Mb,propb)
+      est.Mikb <- tensor(Mb,tca.mod) #estimated M_ik values (list of length Ncell, each of length Nsite)
+      
+      bootIE.tca[i,] <- getIE(Ob,Eb,est.Mikb)$obsIE
   }
-  
-  if(Ncell==3){
-    for(i in 1:med_num_M){
-      mod <- summary(fastLm(O~E+est.Mik[[1]][i,]+
-                              est.Mik[[2]][i,]+
-                              est.Mik[[3]][i,]))
-      pvals[i,] <- mod$coefficients[3:(Ncell+2),4]
-      theta2[i,] <- mod$coefficients[3:(Ncell+2),1]
-      theta1[i] <- mod$coefficients[2,1]
-    }
-  }
-  
-  if(Ncell==2){
-    for(i in 1:med_num_M){
-      mod <- summary(fastLm(O~E+est.Mik[[1]][i,]+
-                              est.Mik[[2]][i,]))
-      pvals[i,] <- mod$coefficients[3:(Ncell+2),4]
-      theta2[i,] <- mod$coefficients[3:(Ncell+2),1]
-      theta1[i] <- mod$coefficients[2,1]
-    }
-  }
-  
+
   
   #identify significant sites/cell types
-  tca.sig[[sim]] <- ifelse(pvals<alpha_tca,1,0)
-  tca.rank[[sim]] <- matrix(rank(pvals), ncol=ncol(pvals))
-  
+  bootInt.tca <- apply(bootIE.tca,2,FUN=function(x2) quantile(x2,c(.025/Ncell,1-(.025/Ncell))))
+  bootInt.toast <- apply(bootIE.tca,2,FUN=function(x2) quantile(x2,c(.025/Ncell,1-(.025/Ncell))))
+  bootSig <- matrix(NA,nrow=2,ncol=Ncell)
+  for(i in 1:ncol(bootInt.tca)){
+    bootSig[1,i] <- ifelse(0>bootInt.tca[1,i]&0<bootInt.tca[2,i],0,1)
+    bootSig[2,i] <- ifelse(0>bootInt.toast[1,i]&0<bootInt.toast[2,i],0,1)
+  }
+  comp.sig[[sim]] <- bootSig
+
   # ## MICS
   # 
   # #load example data
@@ -292,16 +298,13 @@ for (sim in 1:n_sim) {
 
 
 total.sig.em <- Reduce("+",sig.list)
-total.sig.tca <- Reduce("+",tca.sig)
-avg.sig.tca <- Reduce("+",tca.rank)/length(tca.rank)
+total.sig.comp <- Reduce("+",comp.sig)
 
 filename1 <- paste0("EM_Ncell",Ncell,"_Nmed",med_num_cell,"_",i_seed)
-filename2 <- paste0("TCASig_Ncell",Ncell,"_Nmed",med_num_cell,"_",i_seed)
-filename3 <- paste0("TCAAvgRank_Ncell",Ncell,"_Nmed",med_num_cell,"_",i_seed)
+filename2 <- paste0("CompSig_Ncell",Ncell,"_Nmed",med_num_cell,"_",i_seed)
 
 write.table(total.sig.em, filename1, append=TRUE, row.names = FALSE, col.names = FALSE, quote = FALSE)
-write.table(total.sig.tca, filename2, append=TRUE, row.names = FALSE, col.names = FALSE, quote = FALSE)
-write.table(avg.sig.tca, filename3, append=TRUE, row.names = FALSE, col.names = FALSE, quote = FALSE)
+write.table(total.sig.comp, filename2, append=TRUE, row.names = FALSE, col.names = FALSE, quote = FALSE)
 
 #write.table(sig.list, filename2, append=TRUE, row.names = FALSE, col.names = FALSE, quote = FALSE)
 #capture.output(summary(sig.list), file = paste0("myEMtestrun",i_seed,".txt"))

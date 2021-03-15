@@ -429,3 +429,44 @@ julia_command("
     return BootSig
 
 end")
+
+
+getIE <- function(O,E,est.Mik){
+  Ncell <- length(est.Mik)
+  med_num_M <- dim(est.Mik[[1]])[1]
+  Nsample <- dim(est.Mik[[1]])[2]
+  
+  Mikmat <- matrix(unlist(est.Mik),nrow=Nsample,ncol=Ncell)
+  
+  obsIE <- matrix(NA,nrow=med_num_M,ncol=Ncell) #store observed indirect effect for each site
+  for(i in 1:med_num_M){
+    betas <- matrix(NA,4,1)
+    for(j in 1:Ncell){
+      medmod <- summary(fastLm(est.Mik[[j]][i,]~E))
+      betas[j,] <- medmod$coefficients[2,1]
+    }
+    
+    outmod <- summary(fastLm(O~E+Mikmat[,seq(i,Ncell*med_num_M,by=med_num_M)]))
+    theta2 <- matrix(outmod$coefficients[3:(Ncell+2),1],nrow=1,ncol=Ncell)
+    obsIE[i,] <- betas*t(theta2)
+  }
+  return(list(betas=betas,theta2=theta2,obsIE=obsIE))
+}
+
+getTOAST <- function(E,O,M,prop){
+  design <- data.frame(E = as.factor(E))
+  Design_out <- makeDesign(design, Prop)
+  fm <- fitModel(Design_out, M)
+  allbetas <- fm$coefs
+  betas <- fm$coefs[5:8,] ## dim: 2*Ncell X NCpG
+  
+  design2 <- data.frame(O=O,E = as.factor(E))
+  Design_out2 <- makeDesign(design2, Prop)
+  fm2 <- fitModel(Design_out2, M)
+  thetas <- fm2$coefs[5:8,] ## dim: 2*Ncell X NCpG
+  
+  indef <- betas*thetas
+  
+  return(list(allbetas=allbetas,betas=betas,thetas=thetas,indef=indef))
+}
+
