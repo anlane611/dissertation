@@ -455,13 +455,13 @@ getIE <- function(O,E,est.Mik){
 
 getTOAST <- function(E,O,M,prop){
   design <- data.frame(E = as.factor(E))
-  Design_out <- makeDesign(design, Prop)
+  Design_out <- makeDesign(design, prop)
   fm <- fitModel(Design_out, M)
   allbetas <- fm$coefs
   betas <- fm$coefs[5:8,] ## dim: 2*Ncell X NCpG
   
   design2 <- data.frame(O=O,E = as.factor(E))
-  Design_out2 <- makeDesign(design2, Prop)
+  Design_out2 <- makeDesign(design2, prop)
   fm2 <- fitModel(Design_out2, M)
   thetas <- fm2$coefs[5:8,] ## dim: 2*Ncell X NCpG
   

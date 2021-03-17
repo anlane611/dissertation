@@ -15,6 +15,7 @@ if(length(args)==0){
   
   med_num_M <- 2       #number of CpG sites that are mediators
   med_num_cell <- 2    #number of cell types that are mediators
+  med_pi <- 4          #which cell is mediator
   beta_effect <- 1.4   #relationship between mediator M and exposure
   theta_effect <- 0.4  #relationship between mediator M and outcome
   
@@ -43,7 +44,7 @@ julia <- JuliaCall::julia_setup("/apps/julia-1.5.0/bin")
 julia_library("Distributed")
 
 # Here we create our parallel julia processes
-julia_command("addprocs(3)")
+julia_command("addprocs(7)")
 
 julia_command("@everywhere using Distributions")
 julia_command("@everywhere using LinearAlgebra")
@@ -51,13 +52,21 @@ julia_command("@everywhere using SharedArrays")
 
 library(RcppEigen)
 library(TOAST)
-source("TOAST_fromZiyi/fitModel.R")
+#source("TOAST_fromZiyi/fitModel.R")
+source("fitModel.R")
 library(RefFreeEWAS)
 library(EpiDISH)
 library(TCA)
+library(boot)
 #library(MICS)
 source("mediation_sim_functions_1120.R")
-load("TOAST_fromZiyi/BloodPureDNAmethy_4ct.rda")
+#load("TOAST_fromZiyi/BloodPureDNAmethy_4ct.rda")
+load("BloodPureDNAmethy_4ct.rda")
+
+
+
+
+
 
 
 
@@ -176,96 +185,65 @@ for (sim in 1:n_sim) {
   
   
   #---------------------------------------------
-  #  Get TOAST estimates
-  #---------------------------------------------
-
-  Prop <- trueProp
-  colnames(Prop) <- c("CD8T","BCell","Mono","Gran")[1:Ncell] ## need colnames
-  
-  ## estimates for E[M|A]
-
-  # ## estimates for E[M|Y]
-  # design <- data.frame(O = O)
-  # Design_out <- makeDesign(design, Prop)
-  # 
-  # fm <- fitModel(Design_out, Y.raw)
-  # 
-  # coefs.O <- fm$coefs ## dim: 2*Ncell X NCpG
-  # 
-  # res <- csTest(fm, coef=c("O"), sort = FALSE)
-  
-  ## compare to MICS - E[M|E,Y]
-  # design <- data.frame(O=O,E=as.factor(E))
-  # Design_out <- makeDesign(design, Prop)
-  # 
-  # fm <- fitModel(Design_out, Y.raw)
-  # 
-  # coefs.OE <- fm$coefs ## dim: 2*Ncell X NCpG
-  # 
-  # res <- csTest(fm, coef=c("O"), sort = FALSE)
-  
-  
-
-  
-  #---------------------------------------------
   #  Run EM, bootstrap
   #---------------------------------------------
   
-  #select significant CpG sites from TOAST results
+
   
   #sites <- which(res$joint[,2]<alpha)
   #print(sites)
   #nsites <- length(sites)
   M <- matrix(Y.raw[med.sites,],ncol=Nsample)
-  coefs <- getTOAST(E,O,M,Prop)$allbetas
+  coefs <- getTOAST(E,O,M,trueProp)$allbetas #get initial values for beta from TOAST
   coefs.EM <- matrix(coefs,nrow=Ncell*2) #will need to change w/ covariates
   
   #get EM/bootstrap results
+  time1 <- Sys.time()
   sig.list[[sim]] <- julia_call("EMBoot", M, O, E, coefs.EM, Prop, med.pi, theta_effect)
+  print(Sys.time()-time1)
   #print(sig.list[[sim]])
   
   # #---------------------------------------------
   # #  Competing methods
   # #---------------------------------------------
 
-  ## Use TCA estimates in mediation models
-  rownames(trueProp) <- colnames(M) <- 1:Nsample
-  colnames(trueProp) <- 1:Ncell
-  rownames(M) <- 1:med_num_M
-  
-  tca.mod <- tca(M,trueProp)
-  est.Mik <- tensor(M,tca.mod) #estimated M_ik values (list of length Ncell, each of length Nsite)
-
-  b <- 1000
-  bootIE.tca <- matrix(NA,nrow=b,ncol=Ncell) #indirect effect for each bootstrap sample
-  bootIE.toast <- matrix(NA,nrow=b,ncol=Ncell) #indirect effect for each bootstrap sample
-  for(i in 1:b){
-      getIndex <- sample(1:Nsample,Nsample,replace=TRUE)
-      Eb <- E[getIndex]
-      Mb <- matrix(M[getIndex],ncol=Nsample)
-      Ob <- O[getIndex]
-      propb <- trueProp[getIndex,]
-      
-      rownames(propb) <- colnames(Mb) <- 1:Nsample
-      colnames(propb) <- 1:Ncell
-      rownames(Mb) <- 1:med_num_M
-      
-      bootIE.toast[i,] <- getTOAST(Eb,Ob,Mb,propb)$indef
-      
-      tca.modb <- tca(Mb,propb)
-      est.Mikb <- tensor(Mb,tca.mod) #estimated M_ik values (list of length Ncell, each of length Nsite)
-      
-      bootIE.tca[i,] <- getIE(Ob,Eb,est.Mikb)$obsIE
+  dat <- data.frame(E=E,O=O,M=t(M),prop=trueProp)
+  time0 <- Sys.time()
+  myboot1 <- function(dat,i){
+    .dat <- dat[i,]
+    getTOAST(.dat[,1],.dat[,2],t(matrix(.dat[,3])),.dat[,4:7])$indef
+    
   }
+  test1 <- boot(dat, myboot1, R = 1000, parallel = "multicore", ncpus=8)
+  toastres <- lapply(1:4, function(x2) boot.ci(boot.out = test1, conf = 0.9875, type = "perc", index = x2)$percent)
+  
+  
+  
+  myboot2 <- function(dat,i,Ncell,med_num_M){
+    Nsample <- nrow(dat)
+    .dat <- dat[i,]
+    Mb <- matrix(.dat[,3],nrow=med_num_M,ncol=Nsample)
+    propb <- as.matrix(.dat[,4:7],nrow=Nsample,ncol=Ncell)
+    rownames(propb) <- colnames(Mb) <- 1:Nsample
+    colnames(propb) <- 1:Ncell
+    rownames(Mb) <- 1:med_num_M
+    
+    tca.modb <- tca(Mb,propb,verbose=FALSE)
+    est.Mikb <- tensor(Mb,tca.mod,verbose=FALSE) #estimated M_ik values (list of length Ncell, each of length Nsite)
+    
+    getIE(.dat[,2],.dat[,1],est.Mikb)$obsIE
+  }
+  test2 <- boot(dat, myboot2, R = 1000, Ncell = 4, med_num_M = 1, parallel = "multicore", ncpus=8)
+  tcares <- lapply(1:4, function(x2) boot.ci(boot.out = test2, conf = 0.9875, type = "perc", index = x2)$percent)
+  print(Sys.time()-time0)
+
 
   
-  #identify significant sites/cell types
-  bootInt.tca <- apply(bootIE.tca,2,FUN=function(x2) quantile(x2,c(.025/Ncell,1-(.025/Ncell))))
-  bootInt.toast <- apply(bootIE.tca,2,FUN=function(x2) quantile(x2,c(.025/Ncell,1-(.025/Ncell))))
+  
   bootSig <- matrix(NA,nrow=2,ncol=Ncell)
   for(i in 1:ncol(bootInt.tca)){
-    bootSig[1,i] <- ifelse(0>bootInt.tca[1,i]&0<bootInt.tca[2,i],0,1)
-    bootSig[2,i] <- ifelse(0>bootInt.toast[1,i]&0<bootInt.toast[2,i],0,1)
+    bootSig[1,i] <- ifelse(0>tcares[[i]][4]&0<tcares[[i]][5],0,1)
+    bootSig[2,i] <- ifelse(0>toastres[[i]][4]&0<toastres[[i]][5],0,1)
   }
   comp.sig[[sim]] <- bootSig
 
@@ -309,5 +287,4 @@ write.table(total.sig.comp, filename2, append=TRUE, row.names = FALSE, col.names
 #write.table(sig.list, filename2, append=TRUE, row.names = FALSE, col.names = FALSE, quote = FALSE)
 #capture.output(summary(sig.list), file = paste0("myEMtestrun",i_seed,".txt"))
 #write.table(as.data.frame(sig.list),file="myEMtest.csv", quote=F,sep=",",row.names=F)
-
 
