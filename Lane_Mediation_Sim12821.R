@@ -1,3 +1,5 @@
+rm(list=ls())
+
 options(echo=TRUE) # if you want to see commands in output file
 args=(commandArgs(TRUE))
 print(args)
@@ -38,9 +40,10 @@ if(length(args)==0){
 # Setup parameters
 #-------------------------
 
+
 library(JuliaCall)
-julia <- JuliaCall::julia_setup("/apps/julia-1.5.0/bin")
-#julia <- JuliaCall::julia_setup("/Applications/JuliaPro-1.5.2-1.app/Contents/Resources/julia/Contents/Resources/julia/bin")
+#julia <- JuliaCall::julia_setup("/apps/julia-1.5.0/bin")
+julia <- JuliaCall::julia_setup("/Applications/JuliaPro-1.5.2-1.app/Contents/Resources/julia/Contents/Resources/julia/bin")
 julia_library("Distributed")
 
 # Here we create our parallel julia processes
@@ -52,16 +55,16 @@ julia_command("@everywhere using SharedArrays")
 
 library(RcppEigen)
 library(TOAST)
-#source("TOAST_fromZiyi/fitModel.R")
-source("fitModel.R")
+source("TOAST_fromZiyi/fitModel.R")
+#source("fitModel.R")
 library(RefFreeEWAS)
 library(EpiDISH)
 library(TCA)
 library(boot)
-#library(MICS)
+library(MICS)
 source("mediation_sim_functions_1120.R")
-#load("TOAST_fromZiyi/BloodPureDNAmethy_4ct.rda")
-load("BloodPureDNAmethy_4ct.rda")
+load("TOAST_fromZiyi/BloodPureDNAmethy_4ct.rda")
+#load("BloodPureDNAmethy_4ct.rda")
 
 
 
@@ -70,27 +73,27 @@ load("BloodPureDNAmethy_4ct.rda")
 
 
 
-# n_sim <- 1          #number of replicates in this script
-# i_seed <- 1          #seed that changes for each replicate for new observed data
-# myseed <- 123        #seed for selecting CpG sites, mediating sites, mediating cell types
-# 
-# Nsample <- 500       #total sample size
-# Ncell <- 4           #number of cell types
-# Ncpg <- 10           #number of CpG sites
-# 
-# med_num_M <- 1       #number of CpG sites that are mediators
-# med_num_cell <- 1    #number of cell types that are mediators
-# med_pi <- 4          #which cell type is the mediator (for testing purposes 2/8)
-# beta_effect <- 1.4   #relationship between mediator M and exposure
-# theta_effect <- 0.4  #relationship between mediator M and outcome
-# 
-# is_pi_med <- FALSE   #designates whether or not pi is a mediator
-# is_M_med <- TRUE     #designates whether or not M is a mediator
-# 
-# med_exp_pi <- 1      #relationship between mediator pi and exposure
-# med_out_pi <- 1      #relationship between mediator pi and outcome
-# 
-# alpha <- 0.000001    #significance threshold for beta/TOAST to move into EM
+n_sim <- 1          #number of replicates in this script
+i_seed <- 1          #seed that changes for each replicate for new observed data
+myseed <- 123        #seed for selecting CpG sites, mediating sites, mediating cell types
+
+Nsample <- 500       #total sample size
+Ncell <- 4           #number of cell types
+Ncpg <- 10           #number of CpG sites
+
+med_num_M <- 1       #number of CpG sites that are mediators
+med_num_cell <- 1    #number of cell types that are mediators
+med_pi <- 4          #which cell type is the mediator (for testing purposes 2/8)
+beta_effect <- 1.4   #relationship between mediator M and exposure
+theta_effect <- 0.4  #relationship between mediator M and outcome
+
+is_pi_med <- FALSE   #designates whether or not pi is a mediator
+is_M_med <- TRUE     #designates whether or not M is a mediator
+
+med_exp_pi <- 1      #relationship between mediator pi and exposure
+med_out_pi <- 1      #relationship between mediator pi and outcome
+
+alpha <- 0.000001    #significance threshold for beta/TOAST to move into EM
 
 
 
@@ -181,7 +184,7 @@ for (sim in 1:n_sim) {
     O3[i] = sum(tmp * cpg.celltype.thetas)
   }
   
-  O = O3 + rnorm(Nsample, sd=sd(O3)/5) ## I'll keep the error small for now
+  O = O3 + rnorm(Nsample, sd=sd(O3)/2)
   
   
   #---------------------------------------------
@@ -196,78 +199,84 @@ for (sim in 1:n_sim) {
   M <- matrix(Y.raw[med.sites,],ncol=Nsample)
   coefs <- getTOAST(E,O,M,trueProp)$allbetas #get initial values for beta from TOAST
   coefs.EM <- matrix(coefs,nrow=Ncell*2) #will need to change w/ covariates
+  Prop <- trueProp
   
   #get EM/bootstrap results
-  time1 <- Sys.time()
+  # time1 <- Sys.time()
   sig.list[[sim]] <- julia_call("EMBoot", M, O, E, coefs.EM, Prop, med.pi, theta_effect)
-  print(Sys.time()-time1)
+  # print(Sys.time()-time1)
   #print(sig.list[[sim]])
+  
+  
+  # rownames(trueProp) <- colnames(M) <- 1:Nsample
+  # colnames(trueProp) <- 1:Ncell
+  # rownames(M) <- 1:med_num_M
+  # 
+  # tca.mod <- tca(M,trueProp,verbose=FALSE)
+  # est.Mik <- tensor(M,tca.mod,verbose=FALSE) #estimated M_ik values (list of length Ncell, each of length Nsite)
+  # 
+  # summary(fastLm(O~E+t(est.Mik[[1]])+t(est.Mik[[2]])+t(est.Mik[[3]])+t(est.Mik[[4]])))
   
   # #---------------------------------------------
   # #  Competing methods
   # #---------------------------------------------
 
-  dat <- data.frame(E=E,O=O,M=t(M),prop=trueProp)
+  # dat <- data.frame(E=E,O=O,M=t(M),prop=trueProp)
+  # time0 <- Sys.time()
+  # myboot1 <- function(dat,i,med_num_M,Ncell){
+  #   .dat <- dat[i,]
+  #   getTOAST(.dat[,1],.dat[,2],t(matrix(.dat[,3:(3+med_num_M-1)])),.dat[,(3+med_num_M):(2+med_num_M+Ncell)])$indef
+  #   
+  # }
+  # test1 <- boot(dat, myboot1, R = 1000, med_num_M = med_num_M, Ncell=Ncell, parallel = "multicore", ncpus=8)
+  # toastres <- lapply(1:Ncell, function(x2) boot.ci(boot.out = test1, conf = 0.9875, type = "perc", index = x2)$percent)
+  
+  
   time0 <- Sys.time()
-  myboot1 <- function(dat,i){
-    .dat <- dat[i,]
-    getTOAST(.dat[,1],.dat[,2],t(matrix(.dat[,3])),.dat[,4:7])$indef
-    
-  }
-  test1 <- boot(dat, myboot1, R = 1000, parallel = "multicore", ncpus=8)
-  toastres <- lapply(1:4, function(x2) boot.ci(boot.out = test1, conf = 0.9875, type = "perc", index = x2)$percent)
-  
-  
-  
+  dat <- data.frame(E=E,O=O,M=t(M),prop=trueProp)
+  conf_level <- 1-(.05/(Ncell*med_num_M))
   myboot2 <- function(dat,i,Ncell,med_num_M){
     Nsample <- nrow(dat)
     .dat <- dat[i,]
-    Mb <- matrix(.dat[,3],nrow=med_num_M,ncol=Nsample)
-    propb <- as.matrix(.dat[,4:7],nrow=Nsample,ncol=Ncell)
+    Mb <- matrix(.dat[,3:(3+med_num_M-1)],nrow=med_num_M,ncol=Nsample)
+    propb <- as.matrix(.dat[,(3+med_num_M):(2+med_num_M+Ncell)],nrow=Nsample,ncol=Ncell)
     rownames(propb) <- colnames(Mb) <- 1:Nsample
     colnames(propb) <- 1:Ncell
     rownames(Mb) <- 1:med_num_M
     
     tca.modb <- tca(Mb,propb,verbose=FALSE)
-    est.Mikb <- tensor(Mb,tca.mod,verbose=FALSE) #estimated M_ik values (list of length Ncell, each of length Nsite)
+    est.Mikb <- tensor(Mb,tca.modb,verbose=FALSE) #estimated M_ik values (list of length Ncell, each of length Nsite)
     
     getIE(.dat[,2],.dat[,1],est.Mikb)$obsIE
   }
-  test2 <- boot(dat, myboot2, R = 1000, Ncell = 4, med_num_M = 1, parallel = "multicore", ncpus=8)
-  tcares <- lapply(1:4, function(x2) boot.ci(boot.out = test2, conf = 0.9875, type = "perc", index = x2)$percent)
+  test2 <- boot(dat, myboot2, R = 1000, Ncell = Ncell, med_num_M = med_num_M, parallel = "multicore", ncpus=8)
+  tcares <- lapply(1:Ncell, function(x2) boot.ci(boot.out = test2, conf = conf_level, type = "perc", index = x2)$percent)
   print(Sys.time()-time0)
 
 
-  
-  
-  bootSig <- matrix(NA,nrow=2,ncol=Ncell)
-  for(i in 1:ncol(bootInt.tca)){
-    bootSig[1,i] <- ifelse(0>tcares[[i]][4]&0<tcares[[i]][5],0,1)
-    bootSig[2,i] <- ifelse(0>toastres[[i]][4]&0<toastres[[i]][5],0,1)
-  }
-  comp.sig[[sim]] <- bootSig
 
+
+  bootSig <- matrix(NA,nrow=1,ncol=Ncell)
+  for(i in 1:Ncell){
+    bootSig[1,i] <- ifelse(0>tcares[[i]][4]&0<tcares[[i]][5],0,1)
+    #bootSig[2,i] <- ifelse(0>toastres[[i]][4]&0<toastres[[i]][5],0,1)
+  }
+  # 
   # ## MICS
   # 
   # #load example data
   # data(example_data)
   # 
   # #perform mics
-  # #out <- mics(meth_data = Ometh, S = S, X = X, Y = Y, cell_prop = P_matr, 
-  #  #           MCP.type = "FDR", maxp_sq = TRUE)
+  # out <- mics(meth_data = Ometh, S = S, X = X, Y = Y, cell_prop = P_matr,
+  #             MCP.type = "FDR", maxp_sq = TRUE)
   # 
-  # out <- mics(meth_data = Y.raw, S = E, X = NULL, Y = O, cell_prop = trueProp)
-  # 
-  # pval_MultiMed <- out$pval_joint_MultiMed
-  # 
-  # #FDR threshold
-  # fdr_thred <- 0.2
-  # 
-  # ind1 <- which(pval_MultiMed[,1] < fdr_thred)
-  # 
-  # ind2 <- which(pval_MultiMed[,2] < fdr_thred)
-  # 
-  # ind3 <- which(pval_MultiMed[,3] < fdr_thred)
+  X.cov <- matrix(rnorm(Nsample),nrow=Nsample,ncol=1)
+  out <- mics(meth_data = Y.raw, S = E, X = X.cov, Y = O, cell_prop = t(trueProp))
+   
+  pval_MultiMed <- out$pval_joint_MultiMed
+  micSig <- ifelse(pval_MultiMed[med.sites,]<.05,1,0)
+  comp.sig[[sim]] <- rbind(bootSig,micSig)
   
   
   
@@ -278,13 +287,8 @@ for (sim in 1:n_sim) {
 total.sig.em <- Reduce("+",sig.list)
 total.sig.comp <- Reduce("+",comp.sig)
 
-filename1 <- paste0("EM_Ncell",Ncell,"_Nmed",med_num_cell,"_",i_seed)
-filename2 <- paste0("CompSig_Ncell",Ncell,"_Nmed",med_num_cell,"_",i_seed)
+filename1 <- paste0("EM_true_N",Nsample,"_Ncell",Ncell,"_medpi",med.pi,"_",i_seed)
+filename2 <- paste0("Comp_true_N",Nsample,"_Ncell",Ncell,"_medpi",med.pi,"_",i_seed)
 
 write.table(total.sig.em, filename1, append=TRUE, row.names = FALSE, col.names = FALSE, quote = FALSE)
 write.table(total.sig.comp, filename2, append=TRUE, row.names = FALSE, col.names = FALSE, quote = FALSE)
-
-#write.table(sig.list, filename2, append=TRUE, row.names = FALSE, col.names = FALSE, quote = FALSE)
-#capture.output(summary(sig.list), file = paste0("myEMtestrun",i_seed,".txt"))
-#write.table(as.data.frame(sig.list),file="myEMtest.csv", quote=F,sep=",",row.names=F)
-

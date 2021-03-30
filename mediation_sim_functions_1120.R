@@ -41,11 +41,11 @@ getOnePureRefPanel = function(pure_base, pure_sd, med.pi, nonmed.pi,
 
 
 getProportion <- function(N_sample, cc = 100, E.exp, E.unexp, med.pi,
-                          nonmed.pi, med_exp_pi, med = TRUE){
+                          nonmed.pi, med_exp_pi, med = TRUE, Ncell){
   require("gtools")
-
-  # alpha.ctr=c(0.97, 4.71, 0.50, 0.35)
-  alpha.ctr = c(0.1, 0.2, 0.3, 0.4)[1:Ncell]
+  
+  alpha.ctr <- if(Ncell==4) {c(0.1, 0.2, 0.3, 0.4)} else if(Ncell==3){
+              c(0.2, 0.3, 0.5)} else {c(0.4, 0.6)}
 
   prop.matrix.ctr = matrix(0,N_sample,length(alpha.ctr))
     if (med){
@@ -72,7 +72,7 @@ getSampleMix <- function(N_sample, pure_base, pure_sd, noise_sd = 0.1,
 
   ## get proportions
   trueProp = getProportion(N_sample, cc=100, E.exp, E.unexp, med.pi,
-                           nonmed.pi, med_exp_pi, is_pi_med)
+                           nonmed.pi, med_exp_pi, is_pi_med, K)
   alltmp = matrix(0, p, N_sample*K)
 
   ## get mix
@@ -409,7 +409,7 @@ julia_command("
 
     tausq = repeat(rand(InverseGamma(5,0.004),1),Ncell)
     sigmasq = rand(InverseGamma(5,0.004),1)[1]
-    gammasq = 0.0004351324 #(sd(O3)/5)^2
+    gammasq = 0.0007738206 #(sd(O3)/5)^2
     theta0 = 0
     theta1 = 0
     theta2 = zeros(Ncell)
@@ -440,7 +440,7 @@ getIE <- function(O,E,est.Mik){
   
   obsIE <- matrix(NA,nrow=med_num_M,ncol=Ncell) #store observed indirect effect for each site
   for(i in 1:med_num_M){
-    betas <- matrix(NA,4,1)
+    betas <- matrix(NA,Ncell,1)
     for(j in 1:Ncell){
       medmod <- summary(fastLm(est.Mik[[j]][i,]~E))
       betas[j,] <- medmod$coefficients[2,1]
@@ -458,12 +458,12 @@ getTOAST <- function(E,O,M,prop){
   Design_out <- makeDesign(design, prop)
   fm <- fitModel(Design_out, M)
   allbetas <- fm$coefs
-  betas <- fm$coefs[5:8,] ## dim: 2*Ncell X NCpG
+  betas <- fm$coefs[(Ncell+1):(2*Ncell),] ## dim: 2*Ncell X NCpG
   
   design2 <- data.frame(O=O,E = as.factor(E))
   Design_out2 <- makeDesign(design2, prop)
   fm2 <- fitModel(Design_out2, M)
-  thetas <- fm2$coefs[5:8,] ## dim: 2*Ncell X NCpG
+  thetas <- fm2$coefs[(Ncell+1):(2*Ncell),] ## dim: 2*Ncell X NCpG
   
   indef <- betas*thetas
   
