@@ -370,13 +370,17 @@ julia_command("
 
         function getquant(indefb,Ncell)
             bootint = Array{Float64}(undef,2,Ncell)
+            pvals = Array{Float64}(undef,1,Ncell)
             for i in 1:Ncell
                 bootint[:,i] = quantile(myindefb[:,i],[.025/Ncell,1-(.025/Ncell)])
+                pvals[i] = 2*(min(length(myindefb[:,i][myindefb[:,i] .> 0]), 
+                length(myindefb[:,i][myindefb[:,i] .< 0]))/length(myindefb[:,i]))
             end
-            return bootint
+            return bootint, pvals
         end
 
-        mybootint = getquant(myindefb,Ncell)
+        mybootint = getquant(myindefb,Ncell)[1]
+        mybootpvals = getquant(myindefb,Ncell)[2]
 
         function calcindefsig(Ncell,bootint)
             indefSig = Array{Float64}(undef,Ncell)
@@ -392,29 +396,31 @@ julia_command("
 
         indefSig = calcindefsig(Ncell,mybootint)
 
-        return indefSig, ObsIE, mybootint
+        return indefSig, ObsIE, mybootint, mybootpvals
 
 
 end")
 
 julia_command("
-    function EMBoot(M, Y, E, coefs, prop, medpi, thetaEffect)
+    function EMBoot(M, Y, E, coefs, prop, medpi, theta2)
 
 
     Ncpg = size(coefs)[2]
     Ncell = size(prop)[2]
     BootSig = Array{Float64}(undef,Ncpg,Ncell)
+    Bootpvals = Array{Float64}(undef,Ncpg,Ncell)
 
     # set initial values
 
     tausq = repeat(rand(InverseGamma(5,0.004),1),Ncell)
     sigmasq = rand(InverseGamma(5,0.004),1)[1]
-    gammasq = 0.0007738206 #(sd(O3)/5)^2
+    gammasq = rand(InverseGamma(5,0.004),1)[1]
     theta0 = 0
     theta1 = 0
-    theta2 = zeros(Ncell)
-    medpi = Int8(medpi)
-    theta2[medpi] = thetaEffect
+    #theta2 = zeros(Ncell)
+    #medpi = Int8(medpi)
+    #theta2[medpi] = thetaEffect
+    #theta2 = rand(Normal(0.3,0.05),4)
 
     # loop through CpG sites
     for i in 1:Ncpg
@@ -422,11 +428,14 @@ julia_command("
 
           beta0 = coefs[1:Ncell,i]
           beta1 = coefs[(Ncell+1):(2*Ncell),i]
-          BootSig[i,:] = IndefBoot(M[i,:], Y, E, beta0, beta1, prop, tausq,
-                       sigmasq, gammasq, theta0, theta1, theta2)[1]
+           
+          myres = IndefBoot(M[i,:], Y, E, beta0, beta1, prop, tausq,
+                       sigmasq, gammasq, theta0, theta1, theta2)
+          BootSig[i,:] = myres[1]
+          Bootpvals[i,:] = myres[4]
     end
 
-    return BootSig
+    return BootSig, Bootpvals
 
 end")
 

@@ -42,8 +42,8 @@ if(length(args)==0){
 
 
 library(JuliaCall)
-#julia <- JuliaCall::julia_setup("/apps/julia-1.5.0/bin")
-julia <- JuliaCall::julia_setup("/Applications/JuliaPro-1.5.2-1.app/Contents/Resources/julia/Contents/Resources/julia/bin")
+julia <- JuliaCall::julia_setup("/apps/julia-1.5.0/bin")
+#julia <- JuliaCall::julia_setup("/Applications/JuliaPro-1.5.2-1.app/Contents/Resources/julia/Contents/Resources/julia/bin")
 julia_library("Distributed")
 
 # Here we create our parallel julia processes
@@ -55,16 +55,16 @@ julia_command("@everywhere using SharedArrays")
 
 library(RcppEigen)
 library(TOAST)
-source("TOAST_fromZiyi/fitModel.R")
-#source("fitModel.R")
+#source("TOAST_fromZiyi/fitModel.R")
+source("fitModel.R")
 library(RefFreeEWAS)
 library(EpiDISH)
 library(TCA)
 library(boot)
 library(MICS)
 source("mediation_sim_functions_1120.R")
-load("TOAST_fromZiyi/BloodPureDNAmethy_4ct.rda")
-#load("BloodPureDNAmethy_4ct.rda")
+#load("TOAST_fromZiyi/BloodPureDNAmethy_4ct.rda")
+load("BloodPureDNAmethy_4ct.rda")
 
 
 
@@ -73,27 +73,27 @@ load("TOAST_fromZiyi/BloodPureDNAmethy_4ct.rda")
 
 
 
-n_sim <- 1          #number of replicates in this script
-i_seed <- 1          #seed that changes for each replicate for new observed data
-myseed <- 123        #seed for selecting CpG sites, mediating sites, mediating cell types
-
-Nsample <- 500       #total sample size
-Ncell <- 4           #number of cell types
-Ncpg <- 10           #number of CpG sites
-
-med_num_M <- 1       #number of CpG sites that are mediators
-med_num_cell <- 1    #number of cell types that are mediators
-med_pi <- 4          #which cell type is the mediator (for testing purposes 2/8)
-beta_effect <- 1.4   #relationship between mediator M and exposure
-theta_effect <- 0.4  #relationship between mediator M and outcome
-
-is_pi_med <- FALSE   #designates whether or not pi is a mediator
-is_M_med <- TRUE     #designates whether or not M is a mediator
-
-med_exp_pi <- 1      #relationship between mediator pi and exposure
-med_out_pi <- 1      #relationship between mediator pi and outcome
-
-alpha <- 0.000001    #significance threshold for beta/TOAST to move into EM
+# n_sim <- 1          #number of replicates in this script
+# i_seed <- 1          #seed that changes for each replicate for new observed data
+# myseed <- 123        #seed for selecting CpG sites, mediating sites, mediating cell types
+# 
+# Nsample <- 500       #total sample size
+# Ncell <- 4           #number of cell types
+# Ncpg <- 10           #number of CpG sites
+# 
+# med_num_M <- 1       #number of CpG sites that are mediators
+# med_num_cell <- 1    #number of cell types that are mediators
+# med_pi <- 4          #which cell type is the mediator (for testing purposes 2/8)
+# beta_effect <- 1.4   #relationship between mediator M and exposure
+# theta_effect <- 0.4  #relationship between mediator M and outcome
+# 
+# is_pi_med <- FALSE   #designates whether or not pi is a mediator
+# is_M_med <- TRUE     #designates whether or not M is a mediator
+# 
+# med_exp_pi <- 1      #relationship between mediator pi and exposure
+# med_out_pi <- 1      #relationship between mediator pi and outcome
+# 
+# alpha <- 0.000001    #significance threshold for beta/TOAST to move into EM
 
 
 
@@ -201,9 +201,17 @@ for (sim in 1:n_sim) {
   coefs.EM <- matrix(coefs,nrow=Ncell*2) #will need to change w/ covariates
   Prop <- trueProp
   
+  design2 <- data.frame(O=O,E = as.factor(E))
+  Design_out2 <- makeDesign(design2, Prop)
+  fm2 <- fitModel(Design_out2, M)
+  res <- csTest(fm2, coef=c("O"), sort = FALSE)
+  pvals <- matrix(unlist(res)[1:(length(unlist(res))-3)],ncol=7,byrow = TRUE)[,6]
+  theta2.toast <- ifelse(pvals>0.1,0,mean(O))
+  
   #get EM/bootstrap results
   # time1 <- Sys.time()
-  sig.list[[sim]] <- julia_call("EMBoot", M, O, E, coefs.EM, Prop, med.pi, theta_effect)
+  myres <- julia_call("EMBoot", M, O, E, coefs.EM, Prop, med.pi, theta2.toast)
+  EMpvals <- myres[[2]]
   # print(Sys.time()-time1)
   #print(sig.list[[sim]])
   
@@ -250,17 +258,22 @@ for (sim in 1:n_sim) {
     getIE(.dat[,2],.dat[,1],est.Mikb)$obsIE
   }
   test2 <- boot(dat, myboot2, R = 1000, Ncell = Ncell, med_num_M = med_num_M, parallel = "multicore", ncpus=8)
-  tcares <- lapply(1:Ncell, function(x2) boot.ci(boot.out = test2, conf = conf_level, type = "perc", index = x2)$percent)
+  #tcares <- lapply(1:Ncell, function(x2) boot.ci(boot.out = test2, conf = conf_level, type = "perc", index = x2)$percent)
+  TCApvals <- matrix(NA,length(med.sites),Ncell)
+  for(i in 1:Ncell){
+    TCApvals[,i] <- 2*min(length(which(test2$t[,i]<0)),
+                           length(which(test2$t[,i]>0)))/nrow(test2$t)
+  }
   print(Sys.time()-time0)
 
 
 
 
-  bootSig <- matrix(NA,nrow=1,ncol=Ncell)
-  for(i in 1:Ncell){
-    bootSig[1,i] <- ifelse(0>tcares[[i]][4]&0<tcares[[i]][5],0,1)
-    #bootSig[2,i] <- ifelse(0>toastres[[i]][4]&0<toastres[[i]][5],0,1)
-  }
+  # bootSig <- matrix(NA,nrow=1,ncol=Ncell)
+  # for(i in 1:Ncell){
+  #   bootSig[1,i] <- ifelse(0>tcares[[i]][4]&0<tcares[[i]][5],0,1)
+  #   #bootSig[2,i] <- ifelse(0>toastres[[i]][4]&0<toastres[[i]][5],0,1)
+  # }
   # 
   # ## MICS
   # 
@@ -274,21 +287,21 @@ for (sim in 1:n_sim) {
   X.cov <- matrix(rnorm(Nsample),nrow=Nsample,ncol=1)
   out <- mics(meth_data = Y.raw, S = E, X = X.cov, Y = O, cell_prop = t(trueProp))
    
-  pval_MultiMed <- out$pval_joint_MultiMed
-  micSig <- ifelse(pval_MultiMed[med.sites,]<.05,1,0)
-  comp.sig[[sim]] <- rbind(bootSig,micSig)
+  pval_MultiMed <- out$pval_joint_MultiMed[med.sites,]
+  #micSig <- ifelse(pval_MultiMed[med.sites,]<.05,1,0)
+  #comp.sig[[sim]] <- rbind(bootSig,micSig)
   
+
+  filename1 <- paste0("EM_toastPvals_N",Nsample,"_Ncell",Ncell,"_medpi",med.pi,"_sim",sim,"_iseed",i_seed)
+  filename2 <- paste0("TCA_Pvals_N",Nsample,"_Ncell",Ncell,"_medpi",med.pi,"_sim",sim,"_iseed",i_seed)
+  filename3 <- paste0("MICS_Pvals_N",Nsample,"_Ncell",Ncell,"_medpi",med.pi,"_sim",sim,"_iseed",i_seed)
+
+  write.table(EMpvals, filename1, append=TRUE, row.names = FALSE, col.names = FALSE, quote = FALSE)
+  write.table(TCApvals, filename2, append=TRUE, row.names = FALSE, col.names = FALSE, quote = FALSE)
+  write.table(pval_MultiMed, filename3, append=TRUE, row.names = FALSE, col.names = FALSE, quote = FALSE)
   
   
 
 } #end sim
 
 
-total.sig.em <- Reduce("+",sig.list)
-total.sig.comp <- Reduce("+",comp.sig)
-
-filename1 <- paste0("EM_true_N",Nsample,"_Ncell",Ncell,"_medpi",med.pi,"_",i_seed)
-filename2 <- paste0("Comp_true_N",Nsample,"_Ncell",Ncell,"_medpi",med.pi,"_",i_seed)
-
-write.table(total.sig.em, filename1, append=TRUE, row.names = FALSE, col.names = FALSE, quote = FALSE)
-write.table(total.sig.comp, filename2, append=TRUE, row.names = FALSE, col.names = FALSE, quote = FALSE)
