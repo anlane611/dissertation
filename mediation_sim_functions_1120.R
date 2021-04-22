@@ -13,7 +13,8 @@ betaMOM = function(mm, vv){
 
 ## get methylation profiles of pure cell types
 getOnePureRefPanel = function(pure_base, pure_sd, med.pi, nonmed.pi,
-                              med.exp.M, med.sites, nonmed.sites, med = TRUE){
+                              med.exp.M, med.sites, nonmed.sites, 
+                              tauvec, med = TRUE){
   N_feature = dim(pure_base)[1] # number of features
   L = dim(pure_base)[2] # number of pure tissues
 
@@ -24,12 +25,12 @@ getOnePureRefPanel = function(pure_base, pure_sd, med.pi, nonmed.pi,
   ## first generate all data, without considering mediation
   for(i in 1:L) {
       param = betaMOM(pure_base[,i],pure_sd[,i]^2)
-      tissue[,i] = rbeta(N_feature,param[,1],param[,2])
+      tissue[,i] = rbeta(N_feature,param[,1],param[,2])+rnorm(N_feature,0,tauvec)
   }
 
   if (med){
       ## multiply med.exp.M for mediation sites
-      tissue[med.sites,] = tissue[med.sites,] * med.exp.M
+      tissue[med.sites,] = tissue[med.sites,] * med.exp.M + rnorm(Ncell,0,tauvec)
 
   }
 
@@ -63,7 +64,7 @@ getProportion <- function(N_sample, cc = 100, E.exp, E.unexp, med.pi,
 }
 
 ## get mixture
-getSampleMix <- function(N_sample, pure_base, pure_sd, noise_sd = 0.1,
+getSampleMix <- function(N_sample, pure_base, pure_sd, sigma, tauvec,
                          E.exp, E.unexp, med.pi, nonmed.pi, med_exp_pi,
                          med.sites, nonmed.sites, med_exp_M,
                          is_pi_med, is_M_med){
@@ -72,7 +73,7 @@ getSampleMix <- function(N_sample, pure_base, pure_sd, noise_sd = 0.1,
 
   ## get proportions
   trueProp = getProportion(N_sample, cc=100, E.exp, E.unexp, med.pi,
-                           nonmed.pi, med_exp_pi, is_pi_med, K)
+                           nonmed.pi, med_exp_pi, med=is_pi_med, K)
   alltmp = matrix(0, p, N_sample*K)
 
   ## get mix
@@ -80,16 +81,18 @@ getSampleMix <- function(N_sample, pure_base, pure_sd, noise_sd = 0.1,
 
   for(n in E.exp){ #exposed group  - relationship with mediator
     tmp = getOnePureRefPanel(pure_base, pure_sd, med.pi, nonmed.pi,
-                             med.exp.M, med.sites, nonmed.sites, med = is_M_med)
-    tmp = tmp + matrix(rnorm(p*K,0,noise_sd),p,K)
-    obs.Y[,n] = tmp %*% trueProp[n,] + rnorm(p, 0, noise_sd)
+                             med.exp.M, med.sites, nonmed.sites, tauvec,
+                             med = is_M_med)
+    #tmp = tmp + matrix(rnorm(p*K,0,noise_sd),p,K)
+    obs.Y[,n] = tmp %*% trueProp[n,] + rnorm(p, 0, sigma)
     alltmp[,seq(n, n+N_sample*(K-1), by=N_sample)] = tmp
   }
   for(n in E.unexp){ #unexposed group - no relationship with mediator
     tmp = getOnePureRefPanel(pure_base, pure_sd, med.pi, nonmed.pi,
-                             med.exp.M, med.sites, nonmed.sites, med = FALSE)
-    tmp = tmp + matrix(rnorm(p*K,0,noise_sd),p,K)
-    obs.Y[,n] = tmp %*% trueProp[n,] + rnorm(p, 0, noise_sd)
+                             med.exp.M, med.sites, nonmed.sites, tauvec,
+                             med = FALSE)
+    #tmp = tmp + matrix(rnorm(p*K,0,noise_sd),p,K)
+    obs.Y[,n] = tmp %*% trueProp[n,] + rnorm(p, 0, sigma)
     alltmp[,seq(n, n+N_sample*(K-1), by=N_sample)] = tmp
   }
 
@@ -402,7 +405,7 @@ julia_command("
 end")
 
 julia_command("
-    function EMBoot(M, Y, E, coefs, prop, medpi, theta2)
+    function EMBoot(M, Y, E, coefs, prop, medpi, initmethod, thetaEffect, toasttheta2)
 
 
     Ncpg = size(coefs)[2]
@@ -417,10 +420,16 @@ julia_command("
     gammasq = rand(InverseGamma(5,0.004),1)[1]
     theta0 = 0
     theta1 = 0
-    #theta2 = zeros(Ncell)
-    #medpi = Int8(medpi)
-    #theta2[medpi] = thetaEffect
-    #theta2 = rand(Normal(0.3,0.05),4)
+    
+    if initmethod == \"rand\"
+        theta2 = rand(Normal(0.3,0.05),Ncell)
+      elseif initmethod == \"true\"
+        theta2 = zeros(Ncell)
+        medpi = Int8(medpi)
+        theta2[medpi] = thetaEffect
+      else
+        theta2 = toasttheta2
+    end
 
     # loop through CpG sites
     for i in 1:Ncpg
