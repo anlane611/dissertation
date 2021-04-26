@@ -1,7 +1,7 @@
 ---
 title: "Cell-type specific mediation project update"
 author: "Andrea Lane"
-date: "4/06/2021"
+date: "4/22/2021"
 output: 
    pdf_document:
         toc: true
@@ -177,7 +177,7 @@ where $N(Y)$ and $N(M)$ indicate the normal density evaluated with the above mea
  - $\beta_1 = 1.2$
  - $\theta_2 = 0.2$
  - $\gamma^2 = SD(Y_1)/2$, where $Y_1$ is the originally generated outcome
- - $\tau_k^2 = \sigma^2 = 0.01$ (unless otherwise noted, as in table 4 and figure 4)
+ - $\tau_k^2 = \sigma^2 = 0.01$ OR $1$
 
 **EM**:
 
@@ -226,18 +226,17 @@ gettabmat <- function(Nsam,Ncell){
         return(tabmat[-1,])
 }
 
-getpvalmat <- function(folder,Ncell,medpi,Nsam,method,BinSig=FALSE){
+getpvalmat <- function(folder,Ncell,medpi,Nsam,method,sigma,tau,gammadenom){
   mymat <- c()
-  for(i in 1:10){
     for(j in 1:10){
-      newmat <- read.table(paste0(folder,"/",method,"_N",Nsam,"_Ncell",Ncell,"_medpi",medpi,"_sim",i,"_iseed",j))
-      if(method=="MICS_Pvals"){newmat <- t(newmat)}
-      newmat <- as.numeric(newmat)
+      newmat <- as.matrix(read.table(paste0(folder,"/",method,"_N",Nsam,"_Ncell",Ncell,"_medpi",medpi,"_sigma",sigma,"_tau",tau,"_gammadenom",gammadenom,"_iseed",j)))
+      #if(method=="MICS_Pvals"){newmat <- t(newmat)}
+      #newmat <- as.numeric(newmat)
       mymat <- rbind(mymat,newmat)
     }
-  }
-  if(BinSig) mymat <- colSums(ifelse(mymat<.05,1,0))
-  return(mymat)
+  alpha <- ifelse(method=="MICS_Pvals",0.05,.025/Ncell)
+  binmat <- ifelse(mymat<alpha,1,0)
+  return(list(mymat=mymat,binmat=binmat))
 }
 
 getlabmat <- function(Ncell,medpi){
@@ -246,35 +245,40 @@ getlabmat <- function(Ncell,medpi){
   return(mat)
 }
 
-makeroc <- function(folder,Ncell,medpi,Nsam,leg=FALSE,title){
-  colvec <- c("#000000", "#E69F00", "#56B4E9", "#009E73", 
+makeroc <- function(folder,Ncell,medpi,Nsam,sigma,tau,gammadenom=2,leg=FALSE,title){
+  colvec <- c("#E69F00", "#56B4E9", "#009E73", 
                        "#0072B2", "#D55E00", "#CC79A7")
-  pvals1 <- getpvalmat(folder,Ncell,medpi,Nsam,"EM_toastPvals")
-  pvals2 <- getpvalmat(folder,Ncell,medpi,Nsam,"TCA_Pvals")
-  pvals3 <- getpvalmat(folder,Ncell,medpi,Nsam,"MICS_Pvals")
+  
+  pvals1 <- getpvalmat(folder,Ncell,medpi,Nsam,"EM_toastPvals",sigma,tau,gammadenom)$mymat
+  pvals2 <- getpvalmat(folder,Ncell,medpi,Nsam,"TCA_Pvals",sigma,tau,gammadenom)$mymat
+  pvals3 <- getpvalmat(folder,Ncell,medpi,Nsam,"MICS_Pvals",sigma,tau,gammadenom)$mymat
+  pvals4 <- getpvalmat(folder,Ncell,medpi,Nsam,"EM_truePvals",sigma,tau,gammadenom)$mymat
+  pvals5 <- getpvalmat(folder,Ncell,medpi,Nsam,"EM_randPvals",sigma,tau,gammadenom)$mymat
   labmat <- getlabmat(Ncell,medpi)
   
-  # preds <- cbind(pvals1,pvals2,pvals3)
-  # labs <- cbind(labmat,labmat,labmat)
   pred1 <- prediction(as.numeric(pvals1),as.numeric(labmat))
   pred2 <- prediction(as.numeric(pvals2),as.numeric(labmat))
   pred3 <- prediction(as.numeric(pvals3),as.numeric(labmat))
+  pred4 <- prediction(as.numeric(pvals4),as.numeric(labmat))
+  pred5 <- prediction(as.numeric(pvals5),as.numeric(labmat))
   
-  # pred.mat <- prediction(as.numeric(preds),labels=as.numeric(labs))
-  # perf.mat <- performance(pred.mat, "tpr", "fpr")
-  # rocplot <- plot(perf.mat, col=as.list(colvec[1:3]))
-
   perf1 <- performance(pred1,measure="tpr",x.measure="fpr")
   perf2 <- performance(pred2,measure="tpr",x.measure="fpr")
   perf3 <- performance(pred3,measure="tpr",x.measure="fpr")
+  perf4 <- performance(pred4,measure="tpr",x.measure="fpr")
+  perf5 <- performance(pred5,measure="tpr",x.measure="fpr")
 
-  rocplot <- plot(perf1, col=colvec[1],xaxis.cex.axis=0.8,yaxis.cex.axis=0.8,
-                  main=title)
+  rocplot <- plot(perf1, col=colvec[1],
+                  main=title,xaxt="n",yaxt="n")
             plot(perf2, add = TRUE, col=colvec[2],yaxt="n",xaxt="n")
             plot(perf3, add = TRUE, col=colvec[3],yaxt="n",xaxt="n")
+            plot(perf4, add = TRUE, col=colvec[4],yaxt="n",xaxt="n")
+            plot(perf5, add = TRUE, col=colvec[5],yaxt="n",xaxt="n")
+
             #axis(1,at=seq(0,1,0.2),labels = TRUE,tck=0,padj=-1.8)
             #axis(2,at=seq(0,1,0.2),labels = TRUE,tck=0,las=2, mgp=c(3, .2, 0))
-            if(leg){legend("bottomright",legend=c("EM-TO","TCA","MICS"),col=colvec[1:3],lty=1)}
+            if(leg){legend("bottomright",legend=c("EM-Tr","EM-R","EM-TO","TCA","MICS"),col=colvec[c(4,5,1,2,3)],lty=1)}
+            abline(a=0, b= 1)
 
   return(rocplot)
 }
@@ -375,7 +379,6 @@ linesep<-function(x,y=character()){
 }
 
 
-
 tabmat.2cells <- cbind(gettabmat(200,2),gettabmat(500,2),gettabmat(1000,2))
 tabmat.3cells <- cbind(gettabmat(200,3),gettabmat(500,3),gettabmat(1000,3))
 tabmat.4cells <- cbind(gettabmat(200,4),gettabmat(500,4),gettabmat(1000,4))
@@ -387,17 +390,217 @@ myrows <- c("EM - True","EM - Random","EM - TOAST",
                              "EM - True  ","EM - Random  ","EM - TOAST  ",
                              "TCA  ","MICS  ",
                              "EM - True   ","EM - Random   ","EM - TOAST   ",
-                             "TCA   ","MICS   ")
+                             "TCA   ","MICS   ",
+                             "EM - True    ","EM - Random    ","EM - TOAST    ",
+                             "TCA    ","MICS    ",
+                             "EM - True     ","EM - Random     ","EM - TOAST     ",
+                             "TCA     ","MICS     ",
+                             "EM - True      ","EM - Random      ","EM - TOAST      ",
+                             "TCA      ","MICS      ",
+                             "EM - True       ","EM - Random       ","EM - TOAST       ",
+                             "TCA       ","MICS       ")
 rownames(tabmat.2cells) <- myrows[1:10]
 rownames(tabmat.3cells) <- myrows[1:15]
 rownames(tabmat.4cells) <- myrows[1:20]
+
+
+gettabmat2 <- function(Ncell,noise){
+  sam <- c(200,500,1000)
+  methods <- c("EM_truePvals","EM_randPvals","EM_toastPvals","TCA_Pvals","MICS_Pvals")
+  mymat <- matrix(NA,nrow=Ncell*length(methods),ncol=Ncell*length(sam))
+  for(k in sam){
+    for(i in 1:Ncell){
+      for(j in methods){
+        mymat[seq(which(methods==j),Ncell*length(methods),length(methods))[i],(which(sam==k)*Ncell-(Ncell-1)):(Ncell*which(sam==k))] <- colSums(getpvalmat("ROC_042221",Ncell,i,k,
+                                         j,noise,noise,2)$binmat)
+      }
+    }
+  }
+  return(mymat)
+}
 ```
 
 \newpage
+\section{Tables}
 
-\section{Plots}
+```{r newtabs, echo=FALSE}
+tabmat2 <- rbind(gettabmat2(2,0.1),gettabmat2(2,1))
+rownames(tabmat2) <- myrows[1:nrow(tabmat2)]
 
-```{r type1plot, echo=FALSE, results='hide'}
+kable(tabmat2,caption="Significant cell types out of 100 replicates - 2 cells (.4, .6)",col.names=c("Cell 1","Cell 2","Cell 1","Cell 2","Cell 1","Cell 2"),booktabs=T)%>% 
+        kable_styling(latex_options = c("hold_position")) %>% 
+        column_spec(c(2,4,6), bold = c(T,T,T,T,T,F,F,F,F,F,T,T,T,T,T,F,F,F,F,F))%>% 
+        column_spec(c(3,5,7), bold = c(F,F,F,F,F,T,T,T,T,T,F,F,F,F,F,T,T,T,T,T))%>%
+        add_header_above(c(" "=1,"N=200"=2,"N=500"=2,"N=1000"=2)) %>% 
+        pack_rows("Small sigma/tau (0.1)", 1, 10) %>% 
+        pack_rows("Big sigma/tau (1)", 11, 20)
+
+tabmat3 <- rbind(gettabmat2(3,0.1),gettabmat2(3,1))
+rownames(tabmat3) <- myrows[1:nrow(tabmat3)]
+kable(tabmat3,caption="Significant cell types out of 100 replicates - 3 cells (.2, .3, .5)",col.names=c("Cell 1","Cell 2","Cell 3","Cell 1","Cell 2","Cell 3","Cell 1","Cell 2","Cell 3"),booktabs=T)%>%
+        kable_styling(latex_options = c("hold_position")) %>%
+        column_spec(c(2,5,8), bold = c(T,T,T,T,T,F,F,F,F,F,F,F,F,F,F,
+                                       T,T,T,T,T,F,F,F,F,F,F,F,F,F,F))%>%
+        column_spec(c(3,6,9), bold = c(F,F,F,F,F,T,T,T,T,T,F,F,F,F,F,
+                                       F,F,F,F,F,T,T,T,T,T,F,F,F,F,F))%>%
+        column_spec(c(4,7,10), bold = c(F,F,F,F,F,F,F,F,F,F,T,T,T,T,T,
+                                        F,F,F,F,F,F,F,F,F,F,T,T,T,T,T))%>%
+        add_header_above(c(" "=1,"N=200"=3,"N=500"=3,"N=1000"=3)) %>%
+        pack_rows("Small sigma/tau (0.1)", 1, 15) %>%
+        pack_rows("Big sigma/tau (1)", 16, 30)
+
+```
+
+
+```{r newtabs2, echo=FALSE}
+tabmat4 <- rbind(gettabmat2(4,0.1),gettabmat2(4,1))
+rownames(tabmat4) <- myrows[1:nrow(tabmat4)]
+kable(tabmat4,caption="Significant cell types out of 100 replicates - 4 cells (.1, .2, .3, .4)",col.names=c("Cell 1","Cell 2","Cell 3","Cell 4","Cell 1","Cell 2","Cell 3","Cell 4","Cell 1","Cell 2","Cell 3","Cell 4"),booktabs=T)%>% 
+        kable_styling(latex_options = c("hold_position")) %>% 
+        column_spec(c(2,6,10), bold = c(T,T,T,T,T,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,
+                                        T,T,T,T,T,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F))%>%
+        column_spec(c(3,7,11), bold = c(F,F,F,F,F,T,T,T,T,T,F,F,F,F,F,F,F,F,F,F,
+                                        F,F,F,F,F,T,T,T,T,T,F,F,F,F,F,F,F,F,F,F))%>%
+        column_spec(c(4,8,12), bold = c(F,F,F,F,F,F,F,F,F,F,T,T,T,T,T,F,F,F,F,F,
+                                        F,F,F,F,F,F,F,F,F,F,T,T,T,T,T,F,F,F,F,F))%>%
+        column_spec(c(5,9,13), bold = c(F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,T,T,T,T,T,
+                                        F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,T,T,T,T,T))%>%
+        add_header_above(c(" "=1,"N=200"=4,"N=500"=4,"N=1000"=4)) %>% 
+        pack_rows("Small sigma/tau (0.1)", 1, 20) %>% 
+        pack_rows("Big sigma/tau (1)", 21, 40)
+
+```
+
+\clearpage
+\newpage
+
+\section{ROC Curves}
+
+To produce the ROC curves, I calculated a p-value for each method (rather than only a binary significance decision based on the bootstrap CI). For EM and TCA, to calculate the p-value, I took the minimum of (1) the number of bootstrap indirect effect estimates $>$ 0, and (2) the number of bootstrap indirect effect estimates $<$ 0, divided this number by the number of bootstrap samples, and multiplied by 2. I did not take the standard deviation of the bootstrap estimates and use that in a Wald test statistic because I did not want to assume normality of the distribution of the indirect effect. MICS gives p-values directly.
+
+
+```{r 2cellROCsmallsd, echo=FALSE, results='hide'}
+
+par(mfrow=c(3,2), mai=c(0.1,0.1,0.1,0))
+makeroc("ROC_042221",2,1,200,0.1,0.1,leg=TRUE,title="N=200,cell 1 mediator")
+makeroc("ROC_042221",2,2,200,0.1,0.1,title="N=200,cell 2 mediator")
+makeroc("ROC_042221",2,1,500,0.1,0.1,title="N=500,cell 1 mediator")
+makeroc("ROC_042221",2,2,500,0.1,0.1,title="N=500,cell 2 mediator")
+makeroc("ROC_042221",2,1,1000,0.1,0.1,title="N=1000,cell 1 mediator")
+makeroc("ROC_042221",2,2,1000,0.1,0.1,title="N=1000,cell 2 mediator")
+
+
+```
+**Figure 1**: 2 cell types, Low noise (sigma=tau=0.1)
+
+\newpage
+
+```{r 2cellROCbigsd, echo=FALSE, results='hide'}
+
+par(mfrow=c(3,2), mai=c(0.1,0.1,0.1,0))
+makeroc("ROC_042221",2,1,200,1,1,leg=TRUE,title="N=200,cell 1 mediator")
+makeroc("ROC_042221",2,2,200,1,1,title="N=200,cell 2 mediator")
+makeroc("ROC_042221",2,1,500,1,1,title="N=500,cell 1 mediator")
+makeroc("ROC_042221",2,2,500,1,1,title="N=500,cell 2 mediator")
+makeroc("ROC_042221",2,1,1000,1,1,title="N=1000,cell 1 mediator")
+makeroc("ROC_042221",2,2,1000,1,1,title="N=1000,cell 2 mediator")
+
+```
+**Figure 2**: 2 cell types, High noise (sigma=tau=1)
+
+
+```{r 3cellROCsmallsd, echo=FALSE, results='hide'}
+par(mfrow=c(3,3), mai=c(0.1,0.1,0.1,0))
+makeroc("ROC_042221",3,1,200,0.1,0.1,leg=TRUE,title="N=200,cell 1 mediator")
+makeroc("ROC_042221",3,2,200,0.1,0.1,title="N=200,cell 2 mediator")
+makeroc("ROC_042221",3,3,200,0.1,0.1,title="N=200,cell 3 mediator")
+makeroc("ROC_042221",3,1,500,0.1,0.1,title="N=500,cell 1 mediator")
+makeroc("ROC_042221",3,2,500,0.1,0.1,title="N=500,cell 2 mediator")
+makeroc("ROC_042221",3,3,500,0.1,0.1,title="N=500,cell 3 mediator")
+makeroc("ROC_042221",3,1,1000,0.1,0.1,title="N=1000,cell 1 mediator")
+makeroc("ROC_042221",3,2,1000,0.1,0.1,title="N=1000,cell 2 mediator")
+makeroc("ROC_042221",3,3,1000,0.1,0.1,title="N=1000,cell 3 mediator")
+
+```
+**Figure 3**: 3 cell types, Low noise (sigma=tau=0.1)
+
+```{r 3cellROCbigsd, echo=FALSE, results='hide'}
+par(mfrow=c(3,3), mai=c(0.1,0.1,0.1,0))
+makeroc("ROC_042221",3,1,200,1,1,leg=TRUE,title="N=200,cell 1 mediator")
+makeroc("ROC_042221",3,2,200,1,1,title="N=200,cell 2 mediator")
+makeroc("ROC_042221",3,3,200,1,1,title="N=200,cell 3 mediator")
+makeroc("ROC_042221",3,1,500,1,1,title="N=500,cell 1 mediator")
+makeroc("ROC_042221",3,2,500,1,1,title="N=500,cell 2 mediator")
+makeroc("ROC_042221",3,3,500,1,1,title="N=500,cell 3 mediator")
+makeroc("ROC_042221",3,1,1000,1,1,title="N=1000,cell 1 mediator")
+makeroc("ROC_042221",3,2,1000,1,1,title="N=1000,cell 2 mediator")
+makeroc("ROC_042221",3,3,1000,1,1,title="N=1000,cell 3 mediator")
+
+```
+**Figure 4**: 3 cell types, High noise (sigma=tau=1)
+
+
+```{r 4cellROCsmallsd, echo=FALSE, results='hide'}
+par(mfrow=c(3,4), mai=c(0.1,0.1,0.1,0))
+makeroc("ROC_042221",4,1,200,0.1,0.1,leg=TRUE,title="N=200,cell 1 mediator")
+makeroc("ROC_042221",4,2,200,0.1,0.1,title="N=200,cell 2 mediator")
+makeroc("ROC_042221",4,3,200,0.1,0.1,title="N=200,cell 3 mediator")
+makeroc("ROC_042221",4,4,200,0.1,0.1,title="N=200,cell 4 mediator")
+makeroc("ROC_042221",4,1,500,0.1,0.1,title="N=500,cell 1 mediator")
+makeroc("ROC_042221",4,2,500,0.1,0.1,title="N=500,cell 2 mediator")
+makeroc("ROC_042221",4,3,500,0.1,0.1,title="N=500,cell 3 mediator")
+makeroc("ROC_042221",4,4,500,0.1,0.1,title="N=500,cell 4 mediator")
+makeroc("ROC_042221",4,1,1000,0.1,0.1,title="N=1000,cell 1 mediator")
+makeroc("ROC_042221",4,2,1000,0.1,0.1,title="N=1000,cell 2 mediator")
+makeroc("ROC_042221",4,3,1000,0.1,0.1,title="N=1000,cell 3 mediator")
+makeroc("ROC_042221",4,4,1000,0.1,0.1,title="N=1000,cell 4 mediator")
+
+```
+**Figure 5**: 4 cell types, Low noise (sigma=tau=0.1)
+
+
+```{r 4cellROCbigsd, echo=FALSE, results='hide'}
+par(mfrow=c(3,4), mai=c(0.1,0.1,0.1,0))
+makeroc("ROC_042221",4,1,200,1,1,leg=TRUE,title="N=200,cell 1 mediator")
+makeroc("ROC_042221",4,2,200,1,1,title="N=200,cell 2 mediator")
+makeroc("ROC_042221",4,3,200,1,1,title="N=200,cell 3 mediator")
+makeroc("ROC_042221",4,4,200,1,1,title="N=200,cell 4 mediator")
+makeroc("ROC_042221",4,1,500,1,1,title="N=500,cell 1 mediator")
+makeroc("ROC_042221",4,2,500,1,1,title="N=500,cell 2 mediator")
+makeroc("ROC_042221",4,3,500,1,1,title="N=500,cell 3 mediator")
+makeroc("ROC_042221",4,4,500,1,1,title="N=500,cell 4 mediator")
+makeroc("ROC_042221",4,1,1000,1,1,title="N=1000,cell 1 mediator")
+makeroc("ROC_042221",4,2,1000,1,1,title="N=1000,cell 2 mediator")
+makeroc("ROC_042221",4,3,1000,1,1,title="N=1000,cell 3 mediator")
+makeroc("ROC_042221",4,4,1000,1,1,title="N=1000,cell 4 mediator")
+
+```
+**Figure 6**: 4 cell types, High noise (sigma=tau=1)
+
+\newpage
+\section{Other meeting notes}
+
+**Real data**: looked at exposure-outcome univariate relationships with the given variables. Did not find significant relationship between trauma and any of the hormone/biological outcomes. Did find significant relationship between smoking and weight, which seems like a reasonable relationship to test for methylation mediation?
+
+**Met with David about mediation**: talked about structure of paper in terms of causal inference. Product of coefficients method can have a causal interpretation when certain assumptions are met. He suggested I spend time looking at literature and evaluating if these assumptions are biologically reasonable. Focus of BIG presentation?
+
+Assumptions:
+
+ - no exposure-mediator interaction (could be added in model)
+ - no unmeasured exposure-outcome confounders
+ - no unmeasured mediator-outcome confounders
+ - no unmeasured exposure-mediator confounders
+ - no mediator-outcome confounder that is affected by the exposure (nothing on pathway from exposure to mediator that also affects outcome)
+ - temporal ordering
+ 
+
+
+\newpage
+\section{Older results for reference}
+
+Results before I corrected the data generation process (small noise: sigma=tau=0.1)
+
+```{r type1plot, echo=FALSE, results='hide', eval=FALSE}
 
 tab.2 <- rbind(tabmat.2cells[1:5,c(2,4,6)],
                setNames(tabmat.2cells[6:10,c(1,3,5)], names(tabmat.2cells[6:10,c(2,4,6)])))/100
@@ -417,9 +620,9 @@ type1plot(1000,4,tab.4,xlab=TRUE)
 
 
 ```
-**Figure 1A**: Type 1 error for all methods. For rows 2 and 3 (3 sites and 4 sites, respectively), the average of the type 1 error is plotted. For example, the leftmost point on the bottom left plot is the average number of replicates, across cell types 2, 3, and 4, (incorrectly) found to be significant. Note that only one cell type is a mediator at one time.
+<!-- **Figure 1A**: Type 1 error for all methods. For rows 2 and 3 (3 sites and 4 sites, respectively), the average of the type 1 error is plotted. For example, the leftmost point on the bottom left plot is the average number of replicates, across cell types 2, 3, and 4, (incorrectly) found to be significant. Note that only one cell type is a mediator at one time. -->
 
-```{r typ1plot2, echo=FALSE, results='hide'}
+```{r typ1plot2, echo=FALSE, results='hide', eval=FALSE}
 
 tab.2a <- tab.2[-c(2,7),]
 tab.3a <- tab.3[-c(2,7,12),]
@@ -440,10 +643,10 @@ type1plot(1000,4,tab.4a,nmethod=4,xlab=TRUE)
 
 
 ```
-**Figure 1B**: Type 1 error without EM - Random to better differentiate between the other methods.
+<!-- **Figure 1B**: Type 1 error without EM - Random to better differentiate between the other methods. -->
 
 
-```{r plots, echo=FALSE, results='hide'}
+```{r plots, echo=FALSE, results='hide', eval=FALSE}
 
 par(mfrow=c(3,3), mai=c(0.3,0.3,0.15,0))
 powerplot(200,2,tabmat.2cells,ylab=TRUE,yax=TRUE,text=TRUE,title=TRUE)
@@ -457,11 +660,7 @@ powerplot(500,4,tabmat.4cells,xlab=TRUE)
 powerplot(1000,4,tabmat.4cells,xlab=TRUE)
 
 ```
-**Figure 2**: Power for all methods across sample sizes and number of cell types. The number plotted is the number of times, out of 100 replicates, that that cell type was correctly identified as a mediator. Note that only one cell type is a mediator at a time.
-
-\newpage
-
-\section{Tables}
+<!-- **Figure 2**: Power for all methods across sample sizes and number of cell types. The number plotted is the number of times, out of 100 replicates, that that cell type was correctly identified as a mediator. Note that only one cell type is a mediator at a time. -->
 
 ```{r tabs, echo=FALSE}
 kable(tabmat.2cells,caption="Significant cell types out of 100 replicates - 2 cells (.4, .6)",col.names=c("Cell 1","Cell 2","Cell 1","Cell 2","Cell 1","Cell 2"),booktabs=T)%>% 
@@ -489,59 +688,27 @@ kable(tabmat.4cells,caption="Significant cell types out of 100 replicates - 4 ce
         column_spec(c(5,9,13), bold = c(F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,T,T,T,T,T))%>%
         add_header_above(c(" "=1,"N=200"=4,"N=500"=4,"N=1000"=4))
 
-tabmat.3cells.SD1 <- rbind(
-  getpvalmat("ROC_SD1",3,1,500,"EM_toastPvals",BinSig=TRUE),
-  getpvalmat("ROC_SD1",3,1,500,"TCA_Pvals",BinSig=TRUE),
-  getpvalmat("ROC_SD1",3,1,500,"MICS_Pvals",BinSig=TRUE),
-  getpvalmat("ROC_SD1",3,2,500,"EM_toastPvals",BinSig=TRUE),
-  getpvalmat("ROC_SD1",3,2,500,"TCA_Pvals",BinSig=TRUE),
-  getpvalmat("ROC_SD1",3,2,500,"MICS_Pvals",BinSig=TRUE),
-  getpvalmat("ROC_SD1",3,3,500,"EM_toastPvals",BinSig=TRUE),
-  getpvalmat("ROC_SD1",3,3,500,"TCA_Pvals",BinSig=TRUE),
-  getpvalmat("ROC_SD1",3,3,500,"MICS_Pvals",BinSig=TRUE)
-)
+# tabmat.3cells.SD1 <- rbind(
+#   getpvalmat("ROC_SD1",3,1,500,"EM_toastPvals",BinSig=TRUE),
+#   getpvalmat("ROC_SD1",3,1,500,"TCA_Pvals",BinSig=TRUE),
+#   getpvalmat("ROC_SD1",3,1,500,"MICS_Pvals",BinSig=TRUE),
+#   getpvalmat("ROC_SD1",3,2,500,"EM_toastPvals",BinSig=TRUE),
+#   getpvalmat("ROC_SD1",3,2,500,"TCA_Pvals",BinSig=TRUE),
+#   getpvalmat("ROC_SD1",3,2,500,"MICS_Pvals",BinSig=TRUE),
+#   getpvalmat("ROC_SD1",3,3,500,"EM_toastPvals",BinSig=TRUE),
+#   getpvalmat("ROC_SD1",3,3,500,"TCA_Pvals",BinSig=TRUE),
+#   getpvalmat("ROC_SD1",3,3,500,"MICS_Pvals",BinSig=TRUE)
+# )
 
-rownames(tabmat.3cells.SD1) <- myrows[c(3:5,8:10,13:15)]
-
-
-kable(tabmat.3cells.SD1,caption="Significant cell types out of 100 replicates - 3 cells (.2, .3, .5) \n sigma=tau=1",col.names=c("Cell 1","Cell 2","Cell 3"),booktabs=T, linesep = linesep(c(3,3))) %>% 
-        kable_styling(latex_options = c("hold_position")) %>% 
-        column_spec(2, bold = c(T,T,T,F,F,F,F,F,F))%>% 
-        column_spec(3, bold = c(F,F,F,T,T,T,F,F,F))%>%
-        column_spec(4, bold = c(F,F,F,F,F,F,T,T,T))%>%
-        add_header_above(c(" "=1,"N=500"=3))
-
-
-```
-
-
-\newpage
-
-\section{ROC Curves}
-
-To produce the ROC curves, I calculated a p-value for each method (rather than only a binary significance decision based on the bootstrap CI). For EM and TCA, to calculate the p-value, I took the minimum of (1) the number of bootstrap indirect effect estimates $>$ 0, and (2) the number of bootstrap indirect effect estimates $<$ 0, divided this number by the number of bootstrap samples, and multiplied by 2. I did not take the standard deviation of the bootstrap estimates and use that in a Wald test statistic because I did not want to assume normality of the distribution of the indirect effect. MICS gives p-values directly.
-
-```{r ROC, echo=FALSE, results='hide'}
-
-par(mfrow=c(2,2), mai=c(0.8,0.8,0.15,0))
-makeroc("ROC_SD0.1",3,1,500,leg=TRUE,title="Cell 1 mediator")
-makeroc("ROC_SD0.1",3,2,500,title="Cell 2 mediator")
-makeroc("ROC_SD0.1",3,3,500,title="Cell 3 mediator")
-
-```
-**Figure 3**: ROC curves for 3 cell types, N=500, sigma = tau = 0.1 (results correspond to table 2)
-
-\newpage
-
-```{r ROC2, echo=FALSE, results='hide'}
-
-par(mfrow=c(2,2), mai=c(0.8,0.8,0.15,0))
-makeroc("ROC_SD1",3,1,500,leg=TRUE,title="Cell 1 mediator")
-makeroc("ROC_SD1",3,2,500,title="Cell 2 mediator")
-makeroc("ROC_SD1",3,3,500,title="Cell 3 mediator")
+# rownames(tabmat.3cells.SD1) <- myrows[c(3:5,8:10,13:15)]
+# 
+# 
+# kable(tabmat.3cells.SD1,caption="Significant cell types out of 100 replicates - 3 cells (.2, .3, .5) \n sigma=tau=1",col.names=c("Cell 1","Cell 2","Cell 3"),booktabs=T, linesep = linesep(c(3,3))) %>% 
+#         kable_styling(latex_options = c("hold_position")) %>% 
+#         column_spec(2, bold = c(T,T,T,F,F,F,F,F,F))%>% 
+#         column_spec(3, bold = c(F,F,F,T,T,T,F,F,F))%>%
+#         column_spec(4, bold = c(F,F,F,F,F,F,T,T,T))%>%
+#         add_header_above(c(" "=1,"N=500"=3))
 
 
 ```
-
-**Figure 4**: ROC curves for 3 cell types, N=500, sigma = tau = 1 (results correspond to table 4)
-
