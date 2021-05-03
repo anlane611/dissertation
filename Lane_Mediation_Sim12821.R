@@ -18,8 +18,9 @@ if(length(args)==0){
   med_num_M <- 2       #number of CpG sites that are mediators
   med_num_cell <- 2    #number of cell types that are mediators
   med_pi <- 4          #which cell is mediator
-  beta_effect <- 1.4   #relationship between mediator M and exposure
+  beta_effect <- 0.4   #relationship between mediator M and exposure
   theta_effect <- 0.4  #relationship between mediator M and outcome
+  direct_effect <- 0.2 #direct relationship between exposure and outcome
   
   is_pi_med <- FALSE   #designates whether or not pi is a mediator
   is_M_med <- TRUE     #designates whether or not M is a mediator
@@ -46,12 +47,12 @@ if(length(args)==0){
 
 
 library(JuliaCall)
-julia <- JuliaCall::julia_setup("/apps/julia-1.5.0/bin")
-#julia <- JuliaCall::julia_setup("/Applications/JuliaPro-1.5.2-1.app/Contents/Resources/julia/Contents/Resources/julia/bin")
+#julia <- JuliaCall::julia_setup("/apps/julia-1.5.0/bin")
+julia <- JuliaCall::julia_setup("/Applications/JuliaPro-1.5.2-1.app/Contents/Resources/julia/Contents/Resources/julia/bin")
 julia_library("Distributed")
 
 # Here we create our parallel julia processes
-julia_command("addprocs(7)")
+julia_command("addprocs(3)")
 
 julia_command("@everywhere using Distributions")
 julia_command("@everywhere using LinearAlgebra")
@@ -88,19 +89,20 @@ Ncpg <- 10           #number of CpG sites
 med_num_M <- 1       #number of CpG sites that are mediators
 med_num_cell <- 1    #number of cell types that are mediators
 med_pi <- 4          #which cell type is the mediator (for testing purposes 2/8)
-beta_effect <- 1.2   #relationship between mediator M and exposure
+beta_effect <- 0.2   #relationship between mediator M and exposure
 theta_effect <- 0.2  #relationship between mediator M and outcome
+direct_effect <- 0.2 #direct relationship between exposure and outcome
 
 is_pi_med <- FALSE   #designates whether or not pi is a mediator
 is_M_med <- TRUE     #designates whether or not M is a mediator
 
-med_exp_pi <- 1      #relationship between mediator pi and exposure
+med_exp_pi <- 0.2      #relationship between mediator pi and exposure
 med_out_pi <- 1      #relationship between mediator pi and outcome
 
 alpha <- 0.000001    #significance threshold for beta/TOAST to move into EM
 
-sigma <- 1         #noise for M
-gammadenom <- 2      #noise for Y
+sigma <- 0.01         #noise for M
+gammadenom <- 5      #noise for Y
 
 
 
@@ -137,7 +139,7 @@ nonmed.pi <- setdiff(seq(1,Ncell),med.pi)
 
 ## Generate mediation effect size vector for sites, this links trueMethy to E.
 ## I'll make one non-zero entry for each site
-med.exp.M <- matrix(1, nrow=length(med.sites), ncol=Ncell)
+med.exp.M <- matrix(0, nrow=length(med.sites), ncol=Ncell)
 for(i in 1:nrow(med.exp.M)) {
   med.exp.M[i, med.pi] = beta_effect
 }
@@ -149,7 +151,7 @@ for(i in 1:nrow(cpg.celltype.thetas)) {
 }
 
 sig.list <- comp.sig <- vector("list", n_sim)
-EMpvals_true <- EMpvals_rand <- EMpvals_toast <- matrix(NA,n_sim,Ncell)
+EMpvals_true <- EMpvals_rand <- EMpvals_toast <- tcapvals <- pval_MultiMed <- matrix(NA,n_sim,Ncell)
 tau <- sigma
 tauvec <- rep(tau,Ncell)
 pure.sd = pure.sd0[rows,]
@@ -194,7 +196,7 @@ for (sim in 1:n_sim) {
   
   gamma.sd <- sd(O3)/gammadenom
   
-  O = O3 + rnorm(Nsample, sd=gamma.sd)
+  O = O3 + direct_effect*E + rnorm(Nsample, sd=gamma.sd)
   
   
   #---------------------------------------------
@@ -276,12 +278,13 @@ for (sim in 1:n_sim) {
     getIE(.dat[,2],.dat[,1],est.Mikb)$obsIE
   }
   test2 <- boot(dat, myboot2, R = 1000, Ncell = Ncell, med_num_M = med_num_M, parallel = "multicore", ncpus=8)
-  #tcares <- lapply(1:Ncell, function(x2) boot.ci(boot.out = test2, conf = conf_level, type = "perc", index = x2)$percent)
-  TCApvals <- matrix(NA,length(med.sites),Ncell)
+  tcares <- lapply(1:Ncell, function(x2) boot.ci(boot.out = test2, conf = conf_level, type = "perc", index = x2)$percent)
+  TCApvals.tmp <- matrix(NA,length(med.sites),Ncell)
   for(i in 1:Ncell){
-    TCApvals[,i] <- 2*min(length(which(test2$t[,i]<0)),
+    TCApvals.tmp[,i] <- 2*min(length(which(test2$t[,i]<0)),
                            length(which(test2$t[,i]>0)))/nrow(test2$t)
   }
+  TCApvals[sim,] <- TCApvals.tmp
   print(Sys.time()-time0)
 
 
@@ -301,11 +304,11 @@ for (sim in 1:n_sim) {
   # #perform mics
   # out <- mics(meth_data = Ometh, S = S, X = X, Y = Y, cell_prop = P_matr,
   #             MCP.type = "FDR", maxp_sq = TRUE)
-  # 
+
   X.cov <- matrix(rnorm(Nsample),nrow=Nsample,ncol=1)
   out <- mics(meth_data = Y.raw, S = E, X = X.cov, Y = O, cell_prop = t(trueProp))
    
-  pval_MultiMed <- out$pval_joint_MultiMed[med.sites,]
+  pval_MultiMed[sim,] <- out$pval_joint_MultiMed[med.sites,]
   #micSig <- ifelse(pval_MultiMed[med.sites,]<.05,1,0)
   #comp.sig[[sim]] <- rbind(bootSig,micSig)
   

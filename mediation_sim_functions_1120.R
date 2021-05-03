@@ -25,12 +25,12 @@ getOnePureRefPanel = function(pure_base, pure_sd, med.pi, nonmed.pi,
   ## first generate all data, without considering mediation
   for(i in 1:L) {
       param = betaMOM(pure_base[,i],pure_sd[,i]^2)
-      tissue[,i] = rbeta(N_feature,param[,1],param[,2])+rnorm(N_feature,0,tauvec)
+      tissue[,i] = rbeta(N_feature,param[,1],param[,2])
   }
 
   if (med){
       ## multiply med.exp.M for mediation sites
-      tissue[med.sites,] = tissue[med.sites,] * med.exp.M + rnorm(Ncell,0,tauvec)
+      tissue[med.sites,] = tissue[med.sites,] + med.exp.M
 
   }
 
@@ -51,7 +51,7 @@ getProportion <- function(N_sample, cc = 100, E.exp, E.unexp, med.pi,
   prop.matrix.ctr = matrix(0,N_sample,length(alpha.ctr))
     if (med){
       prop.matrix.ctr[E.exp,] = rdirichlet(length(E.exp), alpha.ctr*cc)
-      prop.matrix.ctr[E.exp,med.pi] = prop.matrix.ctr[E.exp,med.pi]*med_exp_pi
+      prop.matrix.ctr[E.exp,med.pi] = prop.matrix.ctr[E.exp,med.pi] + med_exp_pi
       prop.matrix.ctr[E.exp,nonmed.pi] = prop.matrix.ctr[E.exp,nonmed.pi] +
           (1-rowSums(prop.matrix.ctr)[1:length(E.exp)])/length(nonmed.pi)
 
@@ -472,6 +472,7 @@ getIE <- function(O,E,est.Mik){
 }
 
 getTOAST <- function(E,O,M,prop){
+  Ncell <- dim(prop)[2]
   design <- data.frame(E = as.factor(E))
   Design_out <- makeDesign(design, prop)
   fm <- fitModel(Design_out, M)
