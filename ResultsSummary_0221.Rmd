@@ -1,7 +1,7 @@
 ---
 title: "Cell-type specific mediation project update"
 author: "Andrea Lane"
-date: "5/2/2021"
+date: "5/5/2021"
 output: 
    pdf_document:
         toc: true
@@ -165,26 +165,27 @@ where $N(Y)$ and $N(M)$ indicate the normal density evaluated with the above mea
 
 **Data generation**:
 
- - Methylation values generated from beta distribution using BloodPureDNAmethy_4ct.rda values for mean and sd
+ - Binary exposure vector, 50% exposed and 50% unexposed
+ - Cell-type-specific methylation values generated from beta distribution using BloodPureDNAmethy_4ct.rda values for mean and sd. Specifically, mean and sd are used to backsolve for alpha and beta, which are then used to generate true methylation values from a beta distribution.
+  - exposure-mediator effect induced by adding $\beta_1$ to cell-type-specific methylation value in exposed subjects
+ - after adding the mediation effect $\beta_1$, methylation values are checked to be sure they are between 0 and 1: any values $>1$ are set to 0.99 and any values $<0$ are set to 0.01.
  - cell type proportions generated from dirichlet distribution with the following alpha values:
      + 2 cells: 0.4, 0.6
      + 3 cells: 0.2, 0.3, 0.5
      + 4 cells: 0.1, 0.2, 0.3, 0.4
- - Binary exposure vector, 50% exposed and 50% unexposed
- - exposure-mediator effect induced by multiplying cell-type-specific methylation value in exposed by $\beta_1$
  - No direct exposure-outcome effect (i.e. $\theta_1=0$)
  - mediator-outcome effect induced by taking the sum of the cell-type-specific methylation values times $\theta_2$ across all mediating sites (in these results, we only have one mediating site)
- - $\beta_1 = 1.2$
+ - $\beta_1 = 0.2$
  - $\theta_2 = 0.2$
- - $\gamma^2 = SD(Y_1)/2$, where $Y_1$ is the originally generated outcome
- - $\tau_k^2 = \sigma^2 = 0.01$ OR $1$
+ - $\gamma = SD(Y_1)$/gamma denominator, where $Y_1$ is the originally generated outcome. The gamma denominator is either 2 or 5, which results in $\gamma \approx 0.01$ or $\gamma \approx 0.004$, respectively.
+ - $\tau_k$ taken from BloodPureDNAmethy_4ct.rda
+ - $\sigma = 0.03, 0.05, 0.1$ (only results for 0.03 and 0.1 are shown in this document)
 
 **EM**:
 
  - EM is used to obtain parameter estimates. Percentile bootstrap is used to determine mediating sites/cell types.
   - max.iter=500 and tol=0.001
-  - To account for multiple testing, the (.025/Ncell$*$Nsite,1-(.025/Ncell$*$Nsite)) quantile is used for bootstrap samples.
- - EM initial values:
+  - EM initial values:
      + $\beta_0, \beta_1$: coefficients from TOAST
      + tau, sigma, gamma: sampled from inverse gamma distribution with mean 0.001 (based on HIRE, which states that variance initial values are sampled from inverse gamma distribution with small mean but does not specify the mean)
      + $\theta_0, \theta_1: 0$
@@ -192,6 +193,9 @@ where $N(Y)$ and $N(M)$ indicate the normal density evaluated with the above mea
           1. EM - True: true values
           2. EM - random: random value generated from normal distribution with mean 0.3 (approx. mean of Y), SD 0.05 for each cell type
           3. EM - TOAST: The model $M \sim Y + E$ is fit with TOAST. For significant cell types, the mean of the outcome is used as the initial value. For non-significant cell types, the initial value is 0.
+          4. EM - Hybrid: The model $M \sim Y + E$ is fit with TOAST. For significant cell types, the mean of the outcome is used as the initial value. For non-significant cell types, the initial value is a random value generated from normal distribution with the mean of the outcome as the mean and the SD of the outcome as the SD. 
+  - To calculate the p-value, I took the minimum of (1) the number of bootstrap indirect effect estimates $>$ 0, and (2) the number of bootstrap indirect effect estimates $<$ 0, divided this number by the number of bootstrap samples, and multiplied by 2. To assesss significance, I used .05/Number of cell types
+
                 
 **Competing methods**:
 
@@ -226,7 +230,7 @@ gettabmat <- function(Nsam,Ncell){
         return(tabmat[-1,])
 }
 
-getpvalmat <- function(folder,Ncell,medpi,Nsam,method,sigma,tau,gammadenom){
+getpvalmat <- function(folder,Ncell,medpi,Nsam,method,sigma,tau,gammadenom,alpha=.05){
   mymat <- c()
     for(j in 1:10){
       newmat <- as.matrix(read.table(paste0(folder,"/",method,"_N",Nsam,"_Ncell",Ncell,"_medpi",medpi,"_sigma",sigma,"_tau",tau,"_gammadenom",gammadenom,"_iseed",j)))
@@ -234,8 +238,8 @@ getpvalmat <- function(folder,Ncell,medpi,Nsam,method,sigma,tau,gammadenom){
       #newmat <- as.numeric(newmat)
       mymat <- rbind(mymat,newmat)
     }
-  alpha <- ifelse(method=="MICS_Pvals",0.05,.05/Ncell)
-  binmat <- ifelse(mymat<alpha,1,0)
+  myalpha <- ifelse(method=="MICS_Pvals",0.05,alpha)
+  binmat <- ifelse(mymat<myalpha,1,0)
   return(list(mymat=mymat,binmat=binmat))
 }
 
@@ -249,11 +253,12 @@ makeroc <- function(folder,Ncell,medpi,Nsam,sigma,tau,gammadenom=2,leg=FALSE,tit
   colvec <- c("#E69F00", "#56B4E9", "#009E73", 
                        "#0072B2", "#D55E00", "#CC79A7")
   
-  pvals1 <- getpvalmat(folder,Ncell,medpi,Nsam,"EM_toastPvals",sigma,tau,gammadenom)$mymat
-  pvals2 <- getpvalmat(folder,Ncell,medpi,Nsam,"TCA_Pvals",sigma,tau,gammadenom)$mymat
-  pvals3 <- getpvalmat(folder,Ncell,medpi,Nsam,"MICS_Pvals",sigma,tau,gammadenom)$mymat
-  pvals4 <- getpvalmat(folder,Ncell,medpi,Nsam,"EM_truePvals",sigma,tau,gammadenom)$mymat
-  pvals5 <- getpvalmat(folder,Ncell,medpi,Nsam,"EM_randPvals",sigma,tau,gammadenom)$mymat
+  pvals1 <- getpvalmat(folder,Ncell,medpi,Nsam,"EM_truePvals",sigma,tau,gammadenom)$mymat
+  pvals2 <- getpvalmat(folder,Ncell,medpi,Nsam,"EM_randPvals",sigma,tau,gammadenom)$mymat
+  pvals3 <- getpvalmat(folder,Ncell,medpi,Nsam,"EM_hybridPvals",sigma,tau,gammadenom)$mymat
+  pvals4 <- getpvalmat(folder,Ncell,medpi,Nsam,"EM_toastPvals",sigma,tau,gammadenom)$mymat
+  pvals5 <- getpvalmat(folder,Ncell,medpi,Nsam,"TCA_Pvals",sigma,tau,gammadenom)$mymat
+  pvals6 <- getpvalmat(folder,Ncell,medpi,Nsam,"MICS_Pvals",sigma,tau,gammadenom)$mymat
   labmat <- getlabmat(Ncell,medpi)
   
   pred1 <- prediction(as.numeric(pvals1),as.numeric(labmat))
@@ -261,12 +266,14 @@ makeroc <- function(folder,Ncell,medpi,Nsam,sigma,tau,gammadenom=2,leg=FALSE,tit
   pred3 <- prediction(as.numeric(pvals3),as.numeric(labmat))
   pred4 <- prediction(as.numeric(pvals4),as.numeric(labmat))
   pred5 <- prediction(as.numeric(pvals5),as.numeric(labmat))
-  
+  pred6 <- prediction(as.numeric(pvals6),as.numeric(labmat))
+ 
   perf1 <- performance(pred1,measure="tpr",x.measure="fpr")
   perf2 <- performance(pred2,measure="tpr",x.measure="fpr")
   perf3 <- performance(pred3,measure="tpr",x.measure="fpr")
   perf4 <- performance(pred4,measure="tpr",x.measure="fpr")
   perf5 <- performance(pred5,measure="tpr",x.measure="fpr")
+  perf6 <- performance(pred6,measure="tpr",x.measure="fpr")
 
   rocplot <- plot(perf1, col=colvec[1],
                   main=title,xaxt="n",yaxt="n")
@@ -274,34 +281,35 @@ makeroc <- function(folder,Ncell,medpi,Nsam,sigma,tau,gammadenom=2,leg=FALSE,tit
             plot(perf3, add = TRUE, col=colvec[3],yaxt="n",xaxt="n")
             plot(perf4, add = TRUE, col=colvec[4],yaxt="n",xaxt="n")
             plot(perf5, add = TRUE, col=colvec[5],yaxt="n",xaxt="n")
+            plot(perf6, add = TRUE, col=colvec[6],yaxt="n",xaxt="n")
 
             #axis(1,at=seq(0,1,0.2),labels = TRUE,tck=0,padj=-1.8)
             #axis(2,at=seq(0,1,0.2),labels = TRUE,tck=0,las=2, mgp=c(3, .2, 0))
-            if(leg){legend("bottomright",legend=c("EM-Tr","EM-R","EM-TO","TCA","MICS"),col=colvec[c(4,5,1,2,3)],lty=1)}
+            if(leg){legend("bottomright",legend=c("EM-Tr","EM-R","EM-H","EM-TO","TCA","MICS"),col=colvec,lty=1)}
             abline(a=0, b= 1)
 
   return(rocplot)
 }
 
-type1tab <- function(tabmat){
+type1tab <- function(tabmat,nmethod){
         Ncell <- ncol(tabmat)/3
-        mytab <- matrix(NA,nrow=5*Ncell,ncol=3)
+        mytab <- matrix(NA,nrow=nmethod*Ncell,ncol=3)
         for(i in 1:3){ #loop over sample sizes
                 for(j in 1:Ncell){ #loop over mediating cells
-                       mytab[(5*(j-1))+(1:5),i] <- rowMeans(tabmat[,(i-1)*(Ncell)+(1:Ncell)][(5*(j-1))+(1:5),-j]) 
+                       mytab[(nmethod*(j-1))+(1:nmethod),i] <- rowMeans(tabmat[,(i-1)*(Ncell)+(1:Ncell)][(nmethod*(j-1))+(1:nmethod),-j]) 
                 }
         } 
         return(mytab/100)
 }
 
-type1plot <- function(Nsam,Ncell,tabmat,nmethod=5,text=FALSE,ylab=FALSE,xlab=FALSE,yax=FALSE,title=FALSE,leg=FALSE){
-        colvec <- c("#000000", "#E69F00", "#56B4E9", "#009E73", 
+type1plot <- function(Nsam,Ncell,tabmat,nmethod=6,text=FALSE,ylab=FALSE,xlab=FALSE,yax=FALSE,title=FALSE,leg=FALSE){
+        colvec <- c("#E69F00", "#56B4E9", "#009E73", 
                        "#0072B2", "#D55E00", "#CC79A7") #colorblind friendly
-        pchvec <- c(15,17:20)
+        pchvec <- 0:5
         colvec <- if(nmethod==4) {colvec[-2]} else {colvec}
         pchvec <- if(nmethod==4) {pchvec[-2]} else {pchvec}
         y <- ifelse(Nsam==1000,3,ifelse(Nsam==500,2,1))
-        y.lim <- ifelse(nmethod==5,1,0.4)
+        y.lim <- ifelse(nmethod==4,0.4,1)
         plotvec <- c()
         for(i in 1:Ncell){
                 plotvec <- cbind(plotvec,
@@ -329,6 +337,9 @@ type1plot <- function(Nsam,Ncell,tabmat,nmethod=5,text=FALSE,ylab=FALSE,xlab=FAL
         mymain <- ifelse(Nsam==200,"N=200",ifelse(Nsam==500,"N=500","N=1000"))
         if(title) title(main=mymain,line=0.2,font.main=1)
         abline(h=0.05,col="black")
+        if(leg && nmethod==6) legend(0.4,1.05,legend=c("EM-Tr","EM-Ra","EM-H","EM-TO",
+                                                       "TCA","MICS"),
+                       col=colvec,pch=pchvec,cex=0.8)
         if(leg && nmethod==5) legend(0.4,1.05,legend=c("EM-Tr","EM-Ra","EM-TO","TCA","MICS"),
                        col=colvec,pch=pchvec,cex=0.8)
         if(leg && nmethod==4) legend(0.4,0.42,legend=c("EM-Tr","EM-TO","TCA","MICS"),
@@ -337,11 +348,13 @@ type1plot <- function(Nsam,Ncell,tabmat,nmethod=5,text=FALSE,ylab=FALSE,xlab=FAL
         return(myplot)
 }
 
-powerplot <- function(Nsam,Ncell,tabmat,text=FALSE,ylab=FALSE,xlab=FALSE,yax=FALSE,title=FALSE){
-        colvec <- c("#000000", "#E69F00", "#56B4E9", "#009E73", 
+powerplot <- function(Nsam,Ncell,tabmat,nmethod=6,
+                      text=FALSE,ylab=FALSE,xlab=FALSE,yax=FALSE,title=FALSE){
+        colvec <- c("#E69F00", "#56B4E9", "#009E73", 
                        "#0072B2", "#D55E00", "#CC79A7") #colorblind friendly
-        pchvec <- c(15,17:20)
-        ind <- matrix(c(1,1,6,2,11,3,16,4),nrow=4,ncol=2,byrow=TRUE)
+        pchvec <- 0:5
+        ind <- matrix(c(1,1,1+nmethod,2,1+(2*nmethod),3,1+(3*nmethod),4),
+                      nrow=4,ncol=2,byrow=TRUE)
         y.add <- ifelse(Nsam==1000,Ncell*2,ifelse(Nsam==500,Ncell,0))
         plotvec <- c()
         for(i in 1:Ncell){
@@ -352,8 +365,10 @@ powerplot <- function(Nsam,Ncell,tabmat,text=FALSE,ylab=FALSE,xlab=FALSE,yax=FAL
              ylim=c(0,100),col=colvec[1],pch=pchvec[1],
              xlab="",
              ylab="",xaxt="n",yaxt="n")
-        if(text) text(0.85,tabmat[1,1+y.add]-7,str_replace_all(substr(rownames(tabmat)[1],1,7)," ",""))
-        for(i in 1:4){
+        if(text && nmethod==6) legend(0.4,105,legend=c("EM-Tr","EM-Ra","EM-H","EM-TO",
+                                                       "TCA","MICS"),
+                       col=colvec,pch=pchvec,cex=0.8)
+        for(i in 1:5){
                 plotvec2 <- c() 
                         for(j in 1:Ncell){
                                 plotvec2 <- cbind(plotvec2,
@@ -361,7 +376,7 @@ powerplot <- function(Nsam,Ncell,tabmat,text=FALSE,ylab=FALSE,xlab=FALSE,yax=FAL
                         }
                 lines(as.vector(plotvec2),
                       type="b",col=colvec[i+1],pch=pchvec[i+1])
-                if (text) text(c(0.7,0.7,0.8,0.8)[i],c(96, 55,12,3)[i],str_replace_all(substr(rownames(tabmat)[i+1],1,7)," ",""))
+                # if (text) text(c(0.7,0.7,0.8,0.8,0.8)[i],c(96, 55,45,12,3)[i],str_replace_all(substr(rownames(tabmat)[i+1],1,7)," ",""))
         }
         axis(1,at=1:Ncell,labels = TRUE,tck=0,padj=-1.8)
         if(yax) axis(2,at=c(0,25,50,75,100),labels = TRUE,tck=0,las=2, mgp=c(3, .2, 0))
@@ -379,40 +394,44 @@ linesep<-function(x,y=character()){
 }
 
 
-tabmat.2cells <- cbind(gettabmat(200,2),gettabmat(500,2),gettabmat(1000,2))
-tabmat.3cells <- cbind(gettabmat(200,3),gettabmat(500,3),gettabmat(1000,3))
-tabmat.4cells <- cbind(gettabmat(200,4),gettabmat(500,4),gettabmat(1000,4))
+# tabmat.2cells <- cbind(gettabmat(200,2),gettabmat(500,2),gettabmat(1000,2))
+# tabmat.3cells <- cbind(gettabmat(200,3),gettabmat(500,3),gettabmat(1000,3))
+# tabmat.4cells <- cbind(gettabmat(200,4),gettabmat(500,4),gettabmat(1000,4))
 
-myrows <- c("EM - True","EM - Random","EM - TOAST",
+myrows <- c("EM - True","EM - Random","EM - Hybrid","EM - TOAST",
                              "TCA","MICS",
-                             "EM - True ","EM - Random ","EM - TOAST ",
+                             "EM - True ","EM - Random ","EM - Hybrid ","EM - TOAST ",
                              "TCA ","MICS ",
-                             "EM - True  ","EM - Random  ","EM - TOAST  ",
+                             "EM - True  ","EM - Random  ","EM - Hybrid  ","EM - TOAST  ",
                              "TCA  ","MICS  ",
-                             "EM - True   ","EM - Random   ","EM - TOAST   ",
+                             "EM - True   ","EM - Random   ","EM - Hybrid   ","EM - TOAST   ",
                              "TCA   ","MICS   ",
-                             "EM - True    ","EM - Random    ","EM - TOAST    ",
+                             "EM - True    ","EM - Random    ","EM - Hybrid    ",
+                              "EM - TOAST    ",
                              "TCA    ","MICS    ",
-                             "EM - True     ","EM - Random     ","EM - TOAST     ",
+                             "EM - True     ","EM - Random     ","EM - Hybrid     ",
+                              "EM - TOAST     ",
                              "TCA     ","MICS     ",
-                             "EM - True      ","EM - Random      ","EM - TOAST      ",
+                             "EM - True      ","EM - Random      ","EM - Hybrid      ",
+                              "EM - TOAST      ",
                              "TCA      ","MICS      ",
-                             "EM - True       ","EM - Random       ","EM - TOAST       ",
+                             "EM - True       ","EM - Random       ","EM - Hybrid       ",
+                              "EM - TOAST       ",
                              "TCA       ","MICS       ")
-rownames(tabmat.2cells) <- myrows[1:10]
-rownames(tabmat.3cells) <- myrows[1:15]
-rownames(tabmat.4cells) <- myrows[1:20]
+# rownames(tabmat.2cells) <- myrows[1:12]
+# rownames(tabmat.3cells) <- myrows[1:18]
+# rownames(tabmat.4cells) <- myrows[1:24]
 
 
 gettabmat2 <- function(Ncell,noise1,noise2){
   sam <- c(200,500,1000)
-  methods <- c("EM_truePvals","EM_randPvals","EM_toastPvals","TCA_Pvals","MICS_Pvals")
+  methods <- c("EM_truePvals","EM_randPvals","EM_hybridPvals","EM_toastPvals","TCA_Pvals","MICS_Pvals")
   mymat <- matrix(NA,nrow=Ncell*length(methods),ncol=Ncell*length(sam))
   for(k in sam){
     for(i in 1:Ncell){
       for(j in methods){
-        mymat[seq(which(methods==j),Ncell*length(methods),length(methods))[i],(which(sam==k)*Ncell-(Ncell-1)):(Ncell*which(sam==k))] <- colSums(getpvalmat("050221",Ncell,i,k,
-                                         j,noise1,noise1,noise2)$binmat)
+        mymat[seq(which(methods==j),Ncell*length(methods),length(methods))[i],(which(sam==k)*Ncell-(Ncell-1)):(Ncell*which(sam==k))] <- colSums(getpvalmat("050521",Ncell,i,k,
+                                         j,noise1,noise1,noise2,alpha=0.05/Ncell)$binmat)
       }
     }
   }
@@ -424,186 +443,64 @@ gettabmat2 <- function(Ncell,noise1,noise2){
 \section{Tables}
 
 ```{r newtabs, echo=FALSE}
-tabmat2 <- rbind(gettabmat2(2,0.03,5),gettabmat2(2,0.1,5))
+tabmat2 <- rbind(gettabmat2(2,0.03,5),gettabmat2(2,0.1,2))
 rownames(tabmat2) <- myrows[1:nrow(tabmat2)]
 
 kable(tabmat2,caption="Significant cell types out of 100 replicates - 2 cells (.4, .6)",col.names=c("Cell 1","Cell 2","Cell 1","Cell 2","Cell 1","Cell 2"),booktabs=T)%>% 
         kable_styling(latex_options = c("hold_position")) %>% 
-        column_spec(c(2,4,6), bold = c(T,T,T,T,T,F,F,F,F,F,T,T,T,T,T,F,F,F,F,F))%>% 
-        column_spec(c(3,5,7), bold = c(F,F,F,F,F,T,T,T,T,T,F,F,F,F,F,T,T,T,T,T))%>%
+        column_spec(c(2,4,6), bold = c(T,T,T,T,T,T,F,F,F,F,F,F,T,T,T,T,T,T,F,F,F,F,F,F))%>% 
+        column_spec(c(3,5,7), bold = c(F,F,F,F,F,F,T,T,T,T,T,T,F,F,F,F,F,F,T,T,T,T,T,T))%>%
         add_header_above(c(" "=1,"N=200"=2,"N=500"=2,"N=1000"=2)) %>% 
-        pack_rows("Small sigma/tau (0.1)", 1, 10) %>% 
-        pack_rows("Big sigma/tau (1)", 11, 20)
+        pack_rows("Low noise (sigma=0.03, gamma=0.004)", 1, 12) %>% 
+        pack_rows("High noise (sigma=0.1, gamma=0.01)", 13, 24)
 
-tabmat3 <- rbind(gettabmat2(3,0.03,5),gettabmat2(3,0.1,5))
+tabmat3 <- rbind(gettabmat2(3,0.03,5),gettabmat2(3,0.1,2))
 rownames(tabmat3) <- myrows[1:nrow(tabmat3)]
 kable(tabmat3,caption="Significant cell types out of 100 replicates - 3 cells (.2, .3, .5)",col.names=c("Cell 1","Cell 2","Cell 3","Cell 1","Cell 2","Cell 3","Cell 1","Cell 2","Cell 3"),booktabs=T)%>%
         kable_styling(latex_options = c("hold_position")) %>%
-        column_spec(c(2,5,8), bold = c(T,T,T,T,T,F,F,F,F,F,F,F,F,F,F,
-                                       T,T,T,T,T,F,F,F,F,F,F,F,F,F,F))%>%
-        column_spec(c(3,6,9), bold = c(F,F,F,F,F,T,T,T,T,T,F,F,F,F,F,
-                                       F,F,F,F,F,T,T,T,T,T,F,F,F,F,F))%>%
-        column_spec(c(4,7,10), bold = c(F,F,F,F,F,F,F,F,F,F,T,T,T,T,T,
-                                        F,F,F,F,F,F,F,F,F,F,T,T,T,T,T))%>%
+        column_spec(c(2,5,8), bold = c(T,T,T,T,T,T,F,F,F,F,F,F,F,F,F,F,F,F,
+                                       T,T,T,T,T,T,F,F,F,F,F,F,F,F,F,F,F,F))%>%
+        column_spec(c(3,6,9), bold = c(F,F,F,F,F,F,T,T,T,T,T,T,F,F,F,F,F,F,
+                                       F,F,F,F,F,F,T,T,T,T,T,T,F,F,F,F,F,F))%>%
+        column_spec(c(4,7,10), bold = c(F,F,F,F,F,F,F,F,F,F,F,F,T,T,T,T,T,T,
+                                        F,F,F,F,F,F,F,F,F,F,F,F,T,T,T,T,T,T))%>%
         add_header_above(c(" "=1,"N=200"=3,"N=500"=3,"N=1000"=3)) %>%
-        pack_rows("Small sigma/tau (0.1)", 1, 15) %>%
-        pack_rows("Big sigma/tau (1)", 16, 30)
+        pack_rows("Low noise (sigma=0.03, gamma=0.004)", 1, 18) %>%
+        pack_rows("High noise (sigma=0.1, gamma=0.01)", 19, 36)
 
 ```
 
 
 ```{r newtabs2, echo=FALSE}
-tabmat4 <- rbind(gettabmat2(4,0.03,5),gettabmat2(4,0.1,5))
+tabmat4 <- rbind(gettabmat2(4,0.03,5),gettabmat2(4,0.1,2))
 rownames(tabmat4) <- myrows[1:nrow(tabmat4)]
 kable(tabmat4,caption="Significant cell types out of 100 replicates - 4 cells (.1, .2, .3, .4)",col.names=c("Cell 1","Cell 2","Cell 3","Cell 4","Cell 1","Cell 2","Cell 3","Cell 4","Cell 1","Cell 2","Cell 3","Cell 4"),booktabs=T)%>% 
         kable_styling(latex_options = c("hold_position")) %>% 
-        column_spec(c(2,6,10), bold = c(T,T,T,T,T,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,
-                                        T,T,T,T,T,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F))%>%
-        column_spec(c(3,7,11), bold = c(F,F,F,F,F,T,T,T,T,T,F,F,F,F,F,F,F,F,F,F,
-                                        F,F,F,F,F,T,T,T,T,T,F,F,F,F,F,F,F,F,F,F))%>%
-        column_spec(c(4,8,12), bold = c(F,F,F,F,F,F,F,F,F,F,T,T,T,T,T,F,F,F,F,F,
-                                        F,F,F,F,F,F,F,F,F,F,T,T,T,T,T,F,F,F,F,F))%>%
-        column_spec(c(5,9,13), bold = c(F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,T,T,T,T,T,
-                                        F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,T,T,T,T,T))%>%
+        column_spec(c(2,6,10), bold = c(T,T,T,T,T,T,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,
+                                        T,T,T,T,T,T,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F))%>%
+        column_spec(c(3,7,11), bold = c(F,F,F,F,F,F,T,T,T,T,T,T,F,F,F,F,F,F,F,F,F,F,F,F,
+                                        F,F,F,F,F,F,T,T,T,T,T,T,F,F,F,F,F,F,F,F,F,F,F,F))%>%
+        column_spec(c(4,8,12), bold = c(F,F,F,F,F,F,F,F,F,F,F,F,T,T,T,T,T,T,F,F,F,F,F,F,
+                                        F,F,F,F,F,F,F,F,F,F,F,F,T,T,T,T,T,T,F,F,F,F,F,F))%>%
+        column_spec(c(5,9,13), bold = c(F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,T,T,T,T,T,T,
+                                        F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,T,T,T,T,T,T))%>%
         add_header_above(c(" "=1,"N=200"=4,"N=500"=4,"N=1000"=4)) %>% 
-        pack_rows("Small sigma/tau (0.1)", 1, 20) %>% 
-        pack_rows("Big sigma/tau (1)", 21, 40)
+        pack_rows("High noise (sigma=0.1, gamma=0.01)", 1, 24) %>% 
+        pack_rows("High noise (sigma=0.1, gamma=0.01)", 25, 48)
 
 ```
 
 \clearpage
-\newpage
+\section{Plots}
 
-\section{ROC Curves}
-
-To produce the ROC curves, I calculated a p-value for each method (rather than only a binary significance decision based on the bootstrap CI). For EM and TCA, to calculate the p-value, I took the minimum of (1) the number of bootstrap indirect effect estimates $>$ 0, and (2) the number of bootstrap indirect effect estimates $<$ 0, divided this number by the number of bootstrap samples, and multiplied by 2. I did not take the standard deviation of the bootstrap estimates and use that in a Wald test statistic because I did not want to assume normality of the distribution of the indirect effect. MICS gives p-values directly.
-
-
-```{r 2cellROCsmallsd, echo=FALSE, results='hide'}
-
-par(mfrow=c(3,2), mai=c(0.1,0.1,0.1,0))
-makeroc("050221",2,1,200,0.03,0.03,gammadenom=5,leg=TRUE,title="N=200,cell 1 mediator")
-makeroc("050221",2,2,200,0.03,0.03,gammadenom=5,title="N=200,cell 2 mediator")
-makeroc("050221",2,1,500,0.03,0.03,gammadenom=5,title="N=500,cell 1 mediator")
-makeroc("050221",2,2,500,0.03,0.03,gammadenom=5,title="N=500,cell 2 mediator")
-makeroc("050221",2,1,1000,0.03,0.03,gammadenom=5,title="N=1000,cell 1 mediator")
-makeroc("050221",2,2,1000,0.03,0.03,gammadenom=5,title="N=1000,cell 2 mediator")
-
-
-```
-**Figure 1**: 2 cell types, Low noise (sigma=tau=0.03, gamma denominator=5)
-
-\newpage
-
-```{r 2cellROCbigsd, echo=FALSE, results='hide'}
-
-par(mfrow=c(3,2), mai=c(0.1,0.1,0.1,0))
-makeroc("050221",2,1,200,0.1,0.1,leg=TRUE,title="N=200,cell 1 mediator")
-makeroc("050221",2,2,200,0.1,0.1,title="N=200,cell 2 mediator")
-makeroc("050221",2,1,500,0.1,0.1,title="N=500,cell 1 mediator")
-makeroc("050221",2,2,500,0.1,0.1,title="N=500,cell 2 mediator")
-makeroc("050221",2,1,1000,0.1,0.1,title="N=1000,cell 1 mediator")
-makeroc("050221",2,2,1000,0.1,0.1,title="N=1000,cell 2 mediator")
-
-```
-**Figure 2**: 2 cell types, High noise (sigma=tau=0.1, gamma denominator=2)
-
-
-```{r 3cellROCsmallsd, echo=FALSE, results='hide'}
-par(mfrow=c(3,3), mai=c(0.1,0.1,0.1,0))
-makeroc("050221",3,1,200,0.03,0.03,gammadenom=5,leg=TRUE,title="N=200,cell 1 mediator")
-makeroc("050221",3,2,200,0.03,0.03,gammadenom=5,title="N=200,cell 2 mediator")
-makeroc("050221",3,3,200,0.03,0.03,gammadenom=5,title="N=200,cell 3 mediator")
-makeroc("050221",3,1,500,0.03,0.03,gammadenom=5,title="N=500,cell 1 mediator")
-makeroc("050221",3,2,500,0.03,0.03,gammadenom=5,title="N=500,cell 2 mediator")
-makeroc("050221",3,3,500,0.03,0.03,gammadenom=5,title="N=500,cell 3 mediator")
-makeroc("050221",3,1,1000,0.03,0.03,gammadenom=5,title="N=1000,cell 1 mediator")
-makeroc("050221",3,2,1000,0.03,0.03,gammadenom=5,title="N=1000,cell 2 mediator")
-makeroc("050221",3,3,1000,0.03,0.03,gammadenom=5,title="N=1000,cell 3 mediator")
-
-```
-**Figure 3**: 3 cell types, Low noise (sigma=tau=0.03, gamma denominator=5)
-
-```{r 3cellROCbigsd, echo=FALSE, results='hide'}
-par(mfrow=c(3,3), mai=c(0.1,0.1,0.1,0))
-makeroc("050221",3,1,200,0.1,0.1,leg=TRUE,title="N=200,cell 1 mediator")
-makeroc("050221",3,2,200,0.1,0.1,title="N=200,cell 2 mediator")
-makeroc("050221",3,3,200,0.1,0.1,title="N=200,cell 3 mediator")
-makeroc("050221",3,1,500,0.1,0.1,title="N=500,cell 1 mediator")
-makeroc("050221",3,2,500,0.1,0.1,title="N=500,cell 2 mediator")
-makeroc("050221",3,3,500,0.1,0.1,title="N=500,cell 3 mediator")
-makeroc("050221",3,1,1000,0.1,0.1,title="N=1000,cell 1 mediator")
-makeroc("050221",3,2,1000,0.1,0.1,title="N=1000,cell 2 mediator")
-makeroc("050221",3,3,1000,0.1,0.1,title="N=1000,cell 3 mediator")
-
-```
-**Figure 4**: 3 cell types, High noise (sigma=tau=0.1, gamma denominator=2)
-
-
-```{r 4cellROCsmallsd, echo=FALSE, results='hide'}
-par(mfrow=c(3,4), mai=c(0.1,0.1,0.1,0))
-makeroc("050221",4,1,200,0.03,0.03,gammadenom=5,leg=TRUE,title="N=200,cell 1 mediator")
-makeroc("050221",4,2,200,0.03,0.03,gammadenom=5,title="N=200,cell 2 mediator")
-makeroc("050221",4,3,200,0.03,0.03,gammadenom=5,title="N=200,cell 3 mediator")
-makeroc("050221",4,4,200,0.03,0.03,gammadenom=5,title="N=200,cell 4 mediator")
-makeroc("050221",4,1,500,0.03,0.03,gammadenom=5,title="N=500,cell 1 mediator")
-makeroc("050221",4,2,500,0.03,0.03,gammadenom=5,title="N=500,cell 2 mediator")
-makeroc("050221",4,3,500,0.03,0.03,gammadenom=5,title="N=500,cell 3 mediator")
-makeroc("050221",4,4,500,0.03,0.03,gammadenom=5,title="N=500,cell 4 mediator")
-makeroc("050221",4,1,1000,0.03,0.03,gammadenom=5,title="N=1000,cell 1 mediator")
-makeroc("050221",4,2,1000,0.03,0.03,gammadenom=5,title="N=1000,cell 2 mediator")
-makeroc("050221",4,3,1000,0.03,0.03,gammadenom=5,title="N=1000,cell 3 mediator")
-makeroc("050221",4,4,1000,0.03,0.03,gammadenom=5,title="N=1000,cell 4 mediator")
-
-```
-**Figure 5**: 4 cell types, Low noise (sigma=tau=0.03, gamma denominator=5)
-
-
-```{r 4cellROCbigsd, echo=FALSE, results='hide'}
-par(mfrow=c(3,4), mai=c(0.1,0.1,0.1,0))
-makeroc("050221",4,1,200,0.1,0.1,leg=TRUE,title="N=200,cell 1 mediator")
-makeroc("050221",4,2,200,0.1,0.1,title="N=200,cell 2 mediator")
-makeroc("050221",4,3,200,0.1,0.1,title="N=200,cell 3 mediator")
-makeroc("050221",4,4,200,0.1,0.1,title="N=200,cell 4 mediator")
-makeroc("050221",4,1,500,0.1,0.1,title="N=500,cell 1 mediator")
-makeroc("050221",4,2,500,0.1,0.1,title="N=500,cell 2 mediator")
-makeroc("050221",4,3,500,0.1,0.1,title="N=500,cell 3 mediator")
-makeroc("050221",4,4,500,0.1,0.1,title="N=500,cell 4 mediator")
-makeroc("050221",4,1,1000,0.1,0.1,title="N=1000,cell 1 mediator")
-makeroc("050221",4,2,1000,0.1,0.1,title="N=1000,cell 2 mediator")
-makeroc("050221",4,3,1000,0.1,0.1,title="N=1000,cell 3 mediator")
-makeroc("050221",4,4,1000,0.1,0.1,title="N=1000,cell 4 mediator")
-
-```
-**Figure 6**: 4 cell types, High noise (sigma=tau=0.1, gamma denominator=2)
-
-\newpage
-\section{Other meeting notes}
-
-**Real data**: looked at exposure-outcome univariate relationships with the given variables. Did not find significant relationship between trauma and any of the hormone/biological outcomes. Did find significant relationship between smoking and weight, which seems like a reasonable relationship to test for methylation mediation?
-
-**Met with David about mediation**: talked about structure of paper in terms of causal inference. Product of coefficients method can have a causal interpretation when certain assumptions are met. He suggested I spend time looking at literature and evaluating if these assumptions are biologically reasonable. Focus of BIG presentation?
-
-Assumptions:
-
- - no exposure-mediator interaction (could be added in model)
- - no unmeasured exposure-outcome confounders
- - no unmeasured mediator-outcome confounders
- - no unmeasured exposure-mediator confounders
- - no mediator-outcome confounder that is affected by the exposure (nothing on pathway from exposure to mediator that also affects outcome)
- - temporal ordering
- 
-
-
-\newpage
 
 
 ```{r type1plot, echo=FALSE, results='hide'}
 
-tab.2 <- rbind(tabmat2[1:5,c(2,4,6)],
-               setNames(tabmat2[6:10,c(1,3,5)], names(tabmat2[6:10,c(2,4,6)])))/100
-tab.3 <- type1tab(tabmat3)
-tab.4 <- type1tab(tabmat4)
+tab.2 <- rbind(tabmat2[1:6,c(2,4,6)],
+               setNames(tabmat2[7:12,c(1,3,5)], names(tabmat2[7:12,c(2,4,6)])))/100
+tab.3 <- type1tab(tabmat3[1:18,],6)
+tab.4 <- type1tab(tabmat4[1:24,],6)
 
 par(mfrow=c(3,3), mai=c(0.3,0.3,0.15,0))
 type1plot(200,2,tab.2,ylab=TRUE,yax=TRUE,text=TRUE,title=TRUE,leg=TRUE)
@@ -618,7 +515,29 @@ type1plot(1000,4,tab.4,xlab=TRUE)
 
 
 ```
-<!-- **Figure 1A**: Type 1 error for all methods. For rows 2 and 3 (3 sites and 4 sites, respectively), the average of the type 1 error is plotted. For example, the leftmost point on the bottom left plot is the average number of replicates, across cell types 2, 3, and 4, (incorrectly) found to be significant. Note that only one cell type is a mediator at one time. -->
+**Figure 1**: Type 1 error for all methods - low noise setting. For rows 2 and 3 (3 sites and 4 sites, respectively), the average of the type 1 error is plotted. For example, the leftmost point on the bottom left plot is the average number of replicates, across cell types 2, 3, and 4, (incorrectly) found to be significant. Note that only one cell type is a mediator at one time.
+
+```{r type1plot22, echo=FALSE, results='hide'}
+
+tab.2a <- rbind(tabmat2[13:18,c(2,4,6)],
+               setNames(tabmat2[19:24,c(1,3,5)], names(tabmat2[19:24,c(2,4,6)])))/100
+tab.3a <- type1tab(tabmat3[19:36,],6)
+tab.4a <- type1tab(tabmat4[25:48,],6)
+
+par(mfrow=c(3,3), mai=c(0.3,0.3,0.15,0))
+type1plot(200,2,tab.2a,ylab=TRUE,yax=TRUE,text=TRUE,title=TRUE,leg=TRUE)
+type1plot(500,2,tab.2a,title=TRUE)
+type1plot(1000,2,tab.2a,title=TRUE)
+type1plot(200,3,tab.3a,yax=TRUE,ylab=TRUE)
+type1plot(500,3,tab.3a)
+type1plot(1000,3,tab.3a)
+type1plot(200,4,tab.4a,xlab=TRUE,yax=TRUE,ylab=TRUE)
+type1plot(500,4,tab.4a,xlab=TRUE)
+type1plot(1000,4,tab.4a,xlab=TRUE)
+
+
+```
+**Figure 2**: Type 1 error for all methods - high noise setting.
 
 ```{r typ1plot2, echo=FALSE, results='hide', eval=FALSE}
 
@@ -645,68 +564,161 @@ type1plot(1000,4,tab.4a,nmethod=4,xlab=TRUE)
 
 
 ```{r plots, echo=FALSE, results='hide'}
+tabmat2a <- tabmat2[1:12,]
+tabmat3a <- tabmat3[1:18,]
+tabmat4a <- tabmat4[1:24,]
 
 par(mfrow=c(3,3), mai=c(0.3,0.3,0.15,0))
-powerplot(200,2,tabmat2,ylab=TRUE,yax=TRUE,text=TRUE,title=TRUE)
-powerplot(500,2,tabmat2,title=TRUE)
-powerplot(1000,2,tabmat2,title=TRUE)
-powerplot(200,3,tabmat3,yax=TRUE,ylab=TRUE)
-powerplot(500,3,tabmat3)
-powerplot(1000,3,tabmat3)
-powerplot(200,4,tabmat4,xlab=TRUE,yax=TRUE,ylab=TRUE)
-powerplot(500,4,tabmat4,xlab=TRUE)
-powerplot(1000,4,tabmat4,xlab=TRUE)
+powerplot(200,2,tabmat2a,ylab=TRUE,yax=TRUE,text=TRUE,title=TRUE)
+powerplot(500,2,tabmat2a,title=TRUE)
+powerplot(1000,2,tabmat2a,title=TRUE)
+powerplot(200,3,tabmat3a,yax=TRUE,ylab=TRUE)
+powerplot(500,3,tabmat3a)
+powerplot(1000,3,tabmat3a)
+powerplot(200,4,tabmat4a,xlab=TRUE,yax=TRUE,ylab=TRUE)
+powerplot(500,4,tabmat4a,xlab=TRUE)
+powerplot(1000,4,tabmat4a,xlab=TRUE)
 
 ```
-<!-- **Figure 2**: Power for all methods across sample sizes and number of cell types. The number plotted is the number of times, out of 100 replicates, that that cell type was correctly identified as a mediator. Note that only one cell type is a mediator at a time. -->
+**Figure 3**: Power for all methods - low noise setting. The number plotted is the number of times, out of 100 replicates, that that cell type was correctly identified as a mediator. Note that only one cell type is a mediator at a time.
 
-```{r tabs, echo=FALSE}
-kable(tabmat.2cells,caption="Significant cell types out of 100 replicates - 2 cells (.4, .6)",col.names=c("Cell 1","Cell 2","Cell 1","Cell 2","Cell 1","Cell 2"),booktabs=T)%>% 
-        kable_styling(latex_options = c("hold_position")) %>% 
-        column_spec(c(2,4,6), bold = c(T,T,T,T,T,F,F,F,F,F))%>% 
-        column_spec(c(3,5,7), bold = c(F,F,F,F,F,T,T,T,T,T))%>%
-        add_header_above(c(" "=1,"N=200"=2,"N=500"=2,"N=1000"=2))
+```{r plotsbbb, echo=FALSE, results='hide'}
+tabmat2b <- tabmat2[13:24,]
+tabmat3b <- tabmat3[19:36,]
+tabmat4b <- tabmat4[25:48,]
 
-kable(tabmat.3cells,caption="Significant cell types out of 100 replicates - 3 cells (.2, .3, .5)",col.names=c("Cell 1","Cell 2","Cell 3","Cell 1","Cell 2","Cell 3","Cell 1","Cell 2","Cell 3"),booktabs=T)%>% 
-        kable_styling(latex_options = c("hold_position")) %>% 
-        column_spec(c(2,5,8), bold = c(T,T,T,T,T,F,F,F,F,F,F,F,F,F,F))%>% 
-        column_spec(c(3,6,9), bold = c(F,F,F,F,F,T,T,T,T,T,F,F,F,F,F))%>%
-        column_spec(c(4,7,10), bold = c(F,F,F,F,F,F,F,F,F,F,T,T,T,T,T))%>%
-        add_header_above(c(" "=1,"N=200"=3,"N=500"=3,"N=1000"=3))
+par(mfrow=c(3,3), mai=c(0.3,0.3,0.15,0))
+powerplot(200,2,tabmat2b,ylab=TRUE,yax=TRUE,text=TRUE,title=TRUE)
+powerplot(500,2,tabmat2b,title=TRUE)
+powerplot(1000,2,tabmat2b,title=TRUE)
+powerplot(200,3,tabmat3b,yax=TRUE,ylab=TRUE)
+powerplot(500,3,tabmat3b)
+powerplot(1000,3,tabmat3b)
+powerplot(200,4,tabmat4b,xlab=TRUE,yax=TRUE,ylab=TRUE)
+powerplot(500,4,tabmat4b,xlab=TRUE)
+powerplot(1000,4,tabmat4b,xlab=TRUE)
+
 ```
+**Figure 4**: Power for all methods - high noise setting.
+
+\clearpage
+\newpage
+
+\section{ROC Curves}
+
+To produce the ROC curves, I calculated a p-value for each method (rather than only a binary significance decision based on the bootstrap CI). For EM and TCA, to calculate the p-value, I took the minimum of (1) the number of bootstrap indirect effect estimates $>$ 0, and (2) the number of bootstrap indirect effect estimates $<$ 0, divided this number by the number of bootstrap samples, and multiplied by 2. I did not take the standard deviation of the bootstrap estimates and use that in a Wald test statistic because I did not want to assume normality of the distribution of the indirect effect. MICS gives p-values directly.
+
+Each plot shows one site/cell-type scenario and compares the true positives of the mediating cell type in that scenario to the true negatives in the non-mediating cell type(s).
+
+
+```{r 2cellROCsmallsd, echo=FALSE, results='hide'}
+
+par(mfrow=c(3,2), mai=c(0.1,0.1,0.1,0))
+makeroc("050521",2,1,200,0.03,0.03,gammadenom=5,leg=TRUE,title="N=200,cell 1 mediator")
+makeroc("050521",2,2,200,0.03,0.03,gammadenom=5,title="N=200,cell 2 mediator")
+makeroc("050521",2,1,500,0.03,0.03,gammadenom=5,title="N=500,cell 1 mediator")
+makeroc("050521",2,2,500,0.03,0.03,gammadenom=5,title="N=500,cell 2 mediator")
+makeroc("050521",2,1,1000,0.03,0.03,gammadenom=5,title="N=1000,cell 1 mediator")
+makeroc("050521",2,2,1000,0.03,0.03,gammadenom=5,title="N=1000,cell 2 mediator")
+
+
+```
+**Figure 3**: 2 cell types, Low noise (sigma=tau=0.03, gamma $\approx$ 0.004)
 
 \newpage
 
-```{r tabs2, echo=FALSE}
-kable(tabmat.4cells,caption="Significant cell types out of 100 replicates - 4 cells (.1, .2, .3, .4)",col.names=c("Cell 1","Cell 2","Cell 3","Cell 4","Cell 1","Cell 2","Cell 3","Cell 4","Cell 1","Cell 2","Cell 3","Cell 4"),booktabs=T)%>% 
-        kable_styling(latex_options = c("hold_position")) %>% 
-        column_spec(c(2,6,10), bold = c(T,T,T,T,T,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F))%>%
-        column_spec(c(3,7,11), bold = c(F,F,F,F,F,T,T,T,T,T,F,F,F,F,F,F,F,F,F,F))%>%
-        column_spec(c(4,8,12), bold = c(F,F,F,F,F,F,F,F,F,F,T,T,T,T,T,F,F,F,F,F))%>%
-        column_spec(c(5,9,13), bold = c(F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,T,T,T,T,T))%>%
-        add_header_above(c(" "=1,"N=200"=4,"N=500"=4,"N=1000"=4))
+```{r 2cellROCbigsd, echo=FALSE, results='hide'}
 
-# tabmat.3cells.SD1 <- rbind(
-#   getpvalmat("ROC_SD1",3,1,500,"EM_toastPvals",BinSig=TRUE),
-#   getpvalmat("ROC_SD1",3,1,500,"TCA_Pvals",BinSig=TRUE),
-#   getpvalmat("ROC_SD1",3,1,500,"MICS_Pvals",BinSig=TRUE),
-#   getpvalmat("ROC_SD1",3,2,500,"EM_toastPvals",BinSig=TRUE),
-#   getpvalmat("ROC_SD1",3,2,500,"TCA_Pvals",BinSig=TRUE),
-#   getpvalmat("ROC_SD1",3,2,500,"MICS_Pvals",BinSig=TRUE),
-#   getpvalmat("ROC_SD1",3,3,500,"EM_toastPvals",BinSig=TRUE),
-#   getpvalmat("ROC_SD1",3,3,500,"TCA_Pvals",BinSig=TRUE),
-#   getpvalmat("ROC_SD1",3,3,500,"MICS_Pvals",BinSig=TRUE)
-# )
-
-# rownames(tabmat.3cells.SD1) <- myrows[c(3:5,8:10,13:15)]
-# 
-# 
-# kable(tabmat.3cells.SD1,caption="Significant cell types out of 100 replicates - 3 cells (.2, .3, .5) \n sigma=tau=1",col.names=c("Cell 1","Cell 2","Cell 3"),booktabs=T, linesep = linesep(c(3,3))) %>% 
-#         kable_styling(latex_options = c("hold_position")) %>% 
-#         column_spec(2, bold = c(T,T,T,F,F,F,F,F,F))%>% 
-#         column_spec(3, bold = c(F,F,F,T,T,T,F,F,F))%>%
-#         column_spec(4, bold = c(F,F,F,F,F,F,T,T,T))%>%
-#         add_header_above(c(" "=1,"N=500"=3))
-
+par(mfrow=c(3,2), mai=c(0.1,0.1,0.1,0))
+makeroc("050521",2,1,200,0.1,0.1,leg=TRUE,title="N=200,cell 1 mediator")
+makeroc("050521",2,2,200,0.1,0.1,title="N=200,cell 2 mediator")
+makeroc("050521",2,1,500,0.1,0.1,title="N=500,cell 1 mediator")
+makeroc("050521",2,2,500,0.1,0.1,title="N=500,cell 2 mediator")
+makeroc("050521",2,1,1000,0.1,0.1,title="N=1000,cell 1 mediator")
+makeroc("050521",2,2,1000,0.1,0.1,title="N=1000,cell 2 mediator")
 
 ```
+**Figure 4**: 2 cell types, High noise (sigma=tau=0.1, gamma $\approx$ 0.01)
+
+
+```{r 3cellROCsmallsd, echo=FALSE, results='hide'}
+par(mfrow=c(3,3), mai=c(0.1,0.1,0.1,0))
+makeroc("050521",3,1,200,0.03,0.03,gammadenom=5,leg=TRUE,title="N=200,cell 1 mediator")
+makeroc("050521",3,2,200,0.03,0.03,gammadenom=5,title="N=200,cell 2 mediator")
+makeroc("050521",3,3,200,0.03,0.03,gammadenom=5,title="N=200,cell 3 mediator")
+makeroc("050521",3,1,500,0.03,0.03,gammadenom=5,title="N=500,cell 1 mediator")
+makeroc("050521",3,2,500,0.03,0.03,gammadenom=5,title="N=500,cell 2 mediator")
+makeroc("050521",3,3,500,0.03,0.03,gammadenom=5,title="N=500,cell 3 mediator")
+makeroc("050521",3,1,1000,0.03,0.03,gammadenom=5,title="N=1000,cell 1 mediator")
+makeroc("050521",3,2,1000,0.03,0.03,gammadenom=5,title="N=1000,cell 2 mediator")
+makeroc("050521",3,3,1000,0.03,0.03,gammadenom=5,title="N=1000,cell 3 mediator")
+
+```
+**Figure 5**: 3 cell types, Low noise (sigma=tau=0.03, gamma $\approx$ 0.004)
+
+```{r 3cellROCbigsd, echo=FALSE, results='hide'}
+par(mfrow=c(3,3), mai=c(0.1,0.1,0.1,0))
+makeroc("050521",3,1,200,0.1,0.1,leg=TRUE,title="N=200,cell 1 mediator")
+makeroc("050521",3,2,200,0.1,0.1,title="N=200,cell 2 mediator")
+makeroc("050521",3,3,200,0.1,0.1,title="N=200,cell 3 mediator")
+makeroc("050521",3,1,500,0.1,0.1,title="N=500,cell 1 mediator")
+makeroc("050521",3,2,500,0.1,0.1,title="N=500,cell 2 mediator")
+makeroc("050521",3,3,500,0.1,0.1,title="N=500,cell 3 mediator")
+makeroc("050521",3,1,1000,0.1,0.1,title="N=1000,cell 1 mediator")
+makeroc("050521",3,2,1000,0.1,0.1,title="N=1000,cell 2 mediator")
+makeroc("050521",3,3,1000,0.1,0.1,title="N=1000,cell 3 mediator")
+
+```
+**Figure 6**: 3 cell types, High noise (sigma=tau=0.1, gamma $\approx$ 0.01)
+
+
+```{r 4cellROCsmallsd, echo=FALSE, results='hide'}
+par(mfrow=c(3,4), mai=c(0.1,0.1,0.1,0))
+makeroc("050521",4,1,200,0.03,0.03,gammadenom=5,leg=TRUE,title="N=200,cell 1 mediator")
+makeroc("050521",4,2,200,0.03,0.03,gammadenom=5,title="N=200,cell 2 mediator")
+makeroc("050521",4,3,200,0.03,0.03,gammadenom=5,title="N=200,cell 3 mediator")
+makeroc("050521",4,4,200,0.03,0.03,gammadenom=5,title="N=200,cell 4 mediator")
+makeroc("050521",4,1,500,0.03,0.03,gammadenom=5,title="N=500,cell 1 mediator")
+makeroc("050521",4,2,500,0.03,0.03,gammadenom=5,title="N=500,cell 2 mediator")
+makeroc("050521",4,3,500,0.03,0.03,gammadenom=5,title="N=500,cell 3 mediator")
+makeroc("050521",4,4,500,0.03,0.03,gammadenom=5,title="N=500,cell 4 mediator")
+makeroc("050521",4,1,1000,0.03,0.03,gammadenom=5,title="N=1000,cell 1 mediator")
+makeroc("050521",4,2,1000,0.03,0.03,gammadenom=5,title="N=1000,cell 2 mediator")
+makeroc("050521",4,3,1000,0.03,0.03,gammadenom=5,title="N=1000,cell 3 mediator")
+makeroc("050521",4,4,1000,0.03,0.03,gammadenom=5,title="N=1000,cell 4 mediator")
+
+```
+**Figure 7**: 4 cell types, Low noise (sigma=tau=0.03, gamma $\approx$ 0.004)
+
+
+```{r 4cellROCbigsd, echo=FALSE, results='hide'}
+par(mfrow=c(3,4), mai=c(0.1,0.1,0.1,0))
+makeroc("050521",4,1,200,0.1,0.1,leg=TRUE,title="N=200,cell 1 mediator")
+makeroc("050521",4,2,200,0.1,0.1,title="N=200,cell 2 mediator")
+makeroc("050521",4,3,200,0.1,0.1,title="N=200,cell 3 mediator")
+makeroc("050521",4,4,200,0.1,0.1,title="N=200,cell 4 mediator")
+makeroc("050521",4,1,500,0.1,0.1,title="N=500,cell 1 mediator")
+makeroc("050521",4,2,500,0.1,0.1,title="N=500,cell 2 mediator")
+makeroc("050521",4,3,500,0.1,0.1,title="N=500,cell 3 mediator")
+makeroc("050521",4,4,500,0.1,0.1,title="N=500,cell 4 mediator")
+makeroc("050521",4,1,1000,0.1,0.1,title="N=1000,cell 1 mediator")
+makeroc("050521",4,2,1000,0.1,0.1,title="N=1000,cell 2 mediator")
+makeroc("050521",4,3,1000,0.1,0.1,title="N=1000,cell 3 mediator")
+makeroc("050521",4,4,1000,0.1,0.1,title="N=1000,cell 4 mediator")
+
+```
+**Figure 8**: 4 cell types, High noise (sigma=tau=0.1, gamma $\approx$ 0.01)
+
+
+
+\newpage
+\section{Notes}
+
+**Currently working on** real data analysis and simulations that incorporate (1) direct effect between exposure and outcome, and (2) covariates. Changing simulation to randomly generate parameters with each replicate
+
+**Real data**: looked at exposure-outcome univariate relationships with the given variables. Did not find significant relationship between trauma and any of the hormone/biological outcomes. Did find significant relationship between smoking and weight, which seems like a reasonable relationship to test for methylation mediation. Emailed Seyma about this and she said that the data dictionary indicates relationships that have been shown in other studies (e.g. trauma and hormone/biological variables), but those do not necessarily hold true in the GTP data. She said that smoking and weight is a reasonable relationship to look at with DNA methylation as a mediator, so I will start there.
+
+**BIG presentation - project update**: I will show some simulation results and hopefully some from real data application. I will also discuss mediation and the assumptions required for a causal interpretation.
+
+**Next steps**: I've been thinking a lot about where to go from here for the next project. Binary outcome with EM does seem complicated/messy. This mostly concerns me because EM performance so heavily depends on initial values and correct model specification. I've thought about some other approaches ideas but would like to talk them through.
+
