@@ -45,8 +45,8 @@ getProportion <- function(N_sample, cc = 100, E.exp, E.unexp, med.pi,
                           nonmed.pi, med_exp_pi, med = TRUE, Ncell){
   require("gtools")
   
-  alpha.ctr <- if(Ncell==4) {c(0.1, 0.2, 0.3, 0.4)} else if(Ncell==3){
-              c(0.2, 0.3, 0.5)} else {c(0.4, 0.6)}
+  alpha.ctr <- if(Ncell==4) {c(0.97, 0.01, 0.01, 0.01)} else if(Ncell==3){
+              c(0.33, 0.33, 0.34)} else {c(0.5, 0.5)}
 
   prop.matrix.ctr = matrix(0,N_sample,length(alpha.ctr))
     if (med){
@@ -109,11 +109,11 @@ julia_command("
     function IndefBoot(M, Y, E, beta0, beta1, prop, tausq,
                       sigmasq, gammasq, theta0, theta1,
                       theta2; b=1000)
-
+                      
         #= ========================= =#
         #= Define loops as functions =#
         #= ========================= =#
-
+        
         function lobsfun(Nsample,Ymean,Yvar,Y,Mmean,Mvar,M)
             lobsf = 0
             for i in 1:Nsample
@@ -123,7 +123,7 @@ julia_command("
             end
             return lobsf
         end
-
+        
         function calcSigmastar(Nsample,Ncell,prop,sigmasq,Sigmastarinvterm1,Sigmastarinvterm3)
             Sigmastar = Array{Float64}(undef,Ncell,Ncell,Nsample)
             for i in 1:Nsample
@@ -132,7 +132,7 @@ julia_command("
             end
             return Sigmastar
         end
-
+        
         function calcmustarsig(Nsample,Ncell,Y,theta0,theta1,theta2,gammasq,M,prop,
                                 sigmasq,beta0,beta1,E,tausq)
               mustarsig = Array{Float64}(undef,Nsample,Ncell)
@@ -146,7 +146,7 @@ julia_command("
               end
               return mustarsig
         end
-
+        
         function calcmustar(Nsample,Ncell,mustarsig,Sigmastar)
             mustar = Array{Float64}(undef,Nsample,Ncell)
             for i in 1:Nsample
@@ -154,7 +154,7 @@ julia_command("
             end
             return mustar
         end
-
+        
         function calctheta2denom(Nsample,Ncell,Sigmastar,mustar)
             theta2denom = Array{Float64}(undef,Ncell,Ncell,Nsample)
             for i in 1:Nsample
@@ -162,7 +162,7 @@ julia_command("
             end
             return theta2denom
         end
-
+        
         function calcsigmavec(Nsample,prop,Sigmastar,M,mustar)
             sigmavec = Array{Float64}(undef,Nsample)
             for i in 1:Nsample
@@ -171,7 +171,7 @@ julia_command("
             end
             return sigmavec
         end
-
+        
         function calcgammavec(theta2new,Sigmastar,Y,theta0new,theta1new,mustar,E)
             gammavec = Array{Float64}(undef,Nsample)
             for i in 1:Nsample
@@ -180,7 +180,7 @@ julia_command("
             end
             return gammavec
         end
-
+        
         function calctauvec(Nsample,Ncell,E,mustar,beta0new,beta1new,Sigmastar)
             tauvec = Array{Float64}(undef,Nsample,Ncell)
             for i in 1:Nsample, j in 1:Ncell
@@ -189,13 +189,11 @@ julia_command("
             end
             return tauvec
         end
-
-
-
+        
         #= ========================= =#
         #= Define EM Function        =#
         #= ========================= =#
-
+        
                 function CTMEM(M, Y, E, beta0, beta1, prop, tausq,
                               sigmasq, gammasq, theta0, theta1,
                               theta2; maxiter=500, tol=0.001)
@@ -204,80 +202,70 @@ julia_command("
                 Nsample = length(Y)
                 Ncell = size(prop)[2]
                 Emat = repeat(E,1,Ncell)
-
+                
                           #= ========================== =#
                           #= Define likelihood Function =#
                           #= ========================== =#
-
+                          
                           function calc_lobs(M, Y, E, beta0, beta1, prop, tausq,
                                 sigmasq, gammasq, theta0, theta1,theta2)
-
                                 Nsample = length(Y)
                                 Ncell = size(prop)[2]
                                 Emat = repeat(E,1,Ncell)
-
+                                
                                 # calculate observed likelihood terms
                                 beta1E = Emat .* beta1'
                                 beta0beta1E = beta1E .+ beta0'
                                 theta2beta = beta0beta1E .* theta2'
-
                                 Ymean = theta0 .+ theta1 .* E .+ sum(theta2beta,dims=2)
                                 Yvar = sum(theta2' .^2 .* tausq') + gammasq
-
                                 Mmean = sum(beta0beta1E .* prop,dims=2)
                                 Mvar = sum(prop .^ 2 .* tausq',dims=2) .+ sigmasq
-
-
                                 lobs = lobsfun(Nsample,Ymean,Yvar,Y,Mmean,Mvar,M)
-
+                                
                                 return lobs
-
                           end  ### end likelihood function
-
+                          
                 # initialize likelihood for EM
                 lobsi = calc_lobs(M, Y, E, beta0, beta1, prop, tausq,
                        sigmasq, gammasq, theta0, theta1, theta2)
-
-
+                       
                 while iter<=maxiter && err>=tol
-
+                
                     #= ======= =#
                     #= E step  =#
                     #= ======= =#
-
+                    
                     #calculate mu* and sigma* (mean and variance of conditional distribution of m_k)
                       Sigmastarinvterm1 = theta2*theta2' / gammasq
                       Sigmastarinvterm3 = inv(diagm(vec(tausq')))
                       Sigmastar = calcSigmastar(Nsample,Ncell,prop,sigmasq,Sigmastarinvterm1,
                                                                       Sigmastarinvterm3)
-
                       mustarsig = calcmustarsig(Nsample,Ncell,Y,theta0,theta1,theta2,gammasq,M,prop,
                                 sigmasq,beta0,beta1,E,tausq)
-
                       mustar = calcmustar(Nsample,Ncell,mustarsig,Sigmastar)
-
+                      
                     #= ======= =#
                     #= M step  =#
                     #= ======= =#
-
+                    
                     # beta0 update
                     beta1E = Emat .* beta1'
                     beta0new = sum(mustar-beta1E,dims=1) / Nsample
                     beta0new = dropdims(beta0new';dims=2)
-
-
+                    
                     # beta1 update
                     beta0mat = repeat(beta0new',Nsample,1)
                     beta1new = sum((mustar-beta0mat) .* Emat, dims=1) ./ sum(Emat .^ 2,dims=1)
                     beta1new = dropdims(beta1new';dims=2)
-
+                    
                     # theta0 update
                     mutheta2 = mustar .* theta2'
                     theta0new = sum(Y .- theta1 .* E - sum(mutheta2,dims=2)) / Nsample
-
+                    
                     # theta1 update
                     theta1new = sum((Y .- theta0new - sum(mutheta2,dims=2)) .* E) / sum(E .^ 2)
-
+                    
                     # theta2 update
                       # denominator
                       theta2denom = calctheta2denom(Nsample,Ncell,Sigmastar,mustar)
@@ -285,31 +273,27 @@ julia_command("
                     numer = (Y .- theta0new .- theta1new .* E) .* mustar
                     theta2new = sum(numer,dims=1)*denom
                     theta2new = dropdims(theta2new';dims=2)
-
-
+                    
                     # sigma^2 update
                     sigmavec = calcsigmavec(Nsample,prop,Sigmastar,M,mustar)
                     sigmasqnew = sum(sigmavec) / Nsample
-
+                    
                     # gamma^2 update
                     gammavec = calcgammavec(theta2new,Sigmastar,Y,theta0new,theta1new,mustar,E)
                     gammasqnew = sum(gammavec) / Nsample
-
+                    
                     # tau^2 update
                     tauvec = calctauvec(Nsample,Ncell,E,mustar,beta0new,beta1new,Sigmastar)
                     tausqnew = sum(tauvec,dims=1) / Nsample
                     tausqnew = dropdims(tausqnew';dims=2)
-
-
+                    
                     # Evaluate new observed log-likelihood
                         lobsnew = calc_lobs(M, Y, E, beta0new, beta1new, prop,
                                        tausqnew, sigmasqnew, gammasqnew,
                                        theta0new, theta1new, theta2new)
-
+                
                 err = abs(lobsnew - lobsi)
-
                 #Core.println(lobsnew)
-
                 #set new params
                 beta0 = beta0new
                 beta1 = beta1new
@@ -319,58 +303,43 @@ julia_command("
                 tausq = tausqnew
                 sigmasq = sigmasqnew
                 gammasq = gammasqnew
-
                 lobsi = lobsnew
-
                 iter += 1
-
+                
                 end
-
-
-
+                
                 return beta0, beta1, theta0, theta1, theta2, tausq, sigmasq, gammasq, iter
-
                 end # End EM Function
-
+                
         #= ========================= =#
         #= Define Bootstrap Function =#
         #= ========================= =#
-
         function calcboot(b,E,Y,M,Nsample,Ncell, beta0, beta1, prop, tausq,
                 sigmasq, gammasq, theta0, theta1, theta2)
             indefb::SharedArray{Float64,2}=zeros(b,Ncell)
             @sync @distributed for i in 1:b
-
               theIndex = sample(1:Nsample,Nsample,replace=true)
-
               Eb = E[theIndex]
               Yb = Y[theIndex]
               Mb = M[theIndex]
               propb = prop[theIndex,:]
-
               EMboot = CTMEM(Mb, Yb, Eb, beta0, beta1, propb, tausq,
                 sigmasq, gammasq, theta0, theta1, theta2)
-
               indefb[i,:] = EMboot[2] .* EMboot[5]
             end
             
             #display(indefb)
             return indefb
         end
-
-
-
+        
         Ncell = size(prop)[2]
         Nsample = size(prop)[1]
-
         myindefb = calcboot(b,E,Y,M,Nsample,Ncell, beta0, beta1, prop, tausq,
                 sigmasq, gammasq, theta0, theta1, theta2)
-
         EMout = CTMEM(M, Y, E, beta0, beta1, prop, tausq,
                sigmasq, gammasq, theta0, theta1, theta2)
-
         ObsIE = EMout[2] .* EMout[5]
-
+        
         function getquant(indefb,Ncell)
             bootint = Array{Float64}(undef,2,Ncell)
             pvals = Array{Float64}(undef,1,Ncell)
@@ -381,10 +350,10 @@ julia_command("
             end
             return bootint, pvals
         end
-
+        
         mybootint = getquant(myindefb,Ncell)[1]
         mybootpvals = getquant(myindefb,Ncell)[2]
-
+        
         function calcindefsig(Ncell,bootint)
             indefSig = Array{Float64}(undef,Ncell)
             for i in 1:Ncell
@@ -396,13 +365,12 @@ julia_command("
             end
             return indefSig
         end
-
+        
         indefSig = calcindefsig(Ncell,mybootint)
-
+        
         return indefSig, ObsIE, mybootint, mybootpvals
-
-
 end")
+
 
 julia_command("
     function EMBoot(M, Y, E, coefs, prop, medpi, initmethod, thetaEffect, toasttheta2)
@@ -437,6 +405,7 @@ julia_command("
 
           beta0 = coefs[1:Ncell,i]
           beta1 = coefs[(Ncell+1):(2*Ncell),i]
+          #theta2 = toasttheta2[i,:]
            
           myres = IndefBoot(M[i,:], Y, E, beta0, beta1, prop, tausq,
                        sigmasq, gammasq, theta0, theta1, theta2)
@@ -454,7 +423,12 @@ getIE <- function(O,E,est.Mik){
   med_num_M <- dim(est.Mik[[1]])[1]
   Nsample <- dim(est.Mik[[1]])[2]
   
-  Mikmat <- matrix(unlist(est.Mik),nrow=Nsample,ncol=Ncell)
+  Mikmat <- matrix(NA,nrow=Nsample,ncol=Ncell*med_num_M)
+  
+  for(i in 1:Ncell){
+    Mikmat[,seq((med_num_M*i)-(med_num_M-1),med_num_M*i)] <-     
+      t(matrix(unlist(est.Mik[[i]]),nrow=med_num_M,ncol=Nsample))
+  }
   
   obsIE <- matrix(NA,nrow=med_num_M,ncol=Ncell) #store observed indirect effect for each site
   for(i in 1:med_num_M){
