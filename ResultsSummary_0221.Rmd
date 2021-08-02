@@ -780,6 +780,22 @@ makeroc("062121a",4,4,1000,0.03,0.03,gammadenom=5,title="N=1000,cell 4 mediator"
 
 \newpage
 
+```{r 2cellcompare, echo=FALSE, results='hide'}
+par(mfrow=c(4,2), mai=c(0.1,0.1,0.1,0))
+makeroc("071921_9901",2,1,1000,0.03,0.03,gammadenom=5,leg=TRUE,title="0.99",type="roc",nmethod=3)
+makeroc("071921_9901",2,2,1000,0.03,0.03,gammadenom=5,title="0.01",type="roc",nmethod=3)
+makeroc("071921_9010",2,1,1000,0.03,0.03,gammadenom=5,title="0.9",type="roc",nmethod=3)
+makeroc("071921_9010",2,2,1000,0.03,0.03,gammadenom=5,title="0.1",type="roc",nmethod=3)
+makeroc("071921_7030",2,1,1000,0.03,0.03,gammadenom=5,title="0.7",type="roc",nmethod=3)
+makeroc("071921_7030",2,2,1000,0.03,0.03,gammadenom=5,title="0.3",type="roc",nmethod=3)
+makeroc("071921_5050",2,1,1000,0.03,0.03,gammadenom=5,title="0.5",type="roc",nmethod=3)
+makeroc("071921_5050",2,2,1000,0.03,0.03,gammadenom=5,title="0.5",type="roc",nmethod=3)
+
+```
+2 cell types, cell type proportion comparison
+
+\newpage
+
 ```{r 4cellROCsmallsd1pr, echo=FALSE, results='hide'}
 par(mfrow=c(3,4), mai=c(0.1,0.1,0.1,0))
 makeroc("052421",4,1,200,0.03,0.03,gammadenom=5,leg=TRUE,title="N=200,cell 1 mediator",type="pr")
