@@ -29,11 +29,11 @@ getOnePureRefPanel = function(pure_base, pure_sd, med.pi, nonmed.pi,
   }
 
   if (med){
-      ## multiply med.exp.M for mediation sites
+      ## add med.exp.M for mediation sites
       tissue[med.sites,] = tissue[med.sites,] + med.exp.M
 
   }
-
+  
   tissue[tissue < 0] = 0.01
   tissue[tissue > 1] = 0.99
 
@@ -45,8 +45,8 @@ getProportion <- function(N_sample, cc = 100, E.exp, E.unexp, med.pi,
                           nonmed.pi, med_exp_pi, med = TRUE, Ncell){
   require("gtools")
   
-  alpha.ctr <- if(Ncell==4) {c(0.97, 0.01, 0.01, 0.01)} else if(Ncell==3){
-              c(0.33, 0.33, 0.34)} else {c(0.5, 0.5)}
+  alpha.ctr <- if(Ncell==4) {c(0.1, 0.2, 0.3, 0.4)} else if(Ncell==3){
+              c(0.2, 0.3, 0.5)} else {c(0.4, 0.6)}
 
   prop.matrix.ctr = matrix(0,N_sample,length(alpha.ctr))
     if (med){
@@ -67,7 +67,7 @@ getProportion <- function(N_sample, cc = 100, E.exp, E.unexp, med.pi,
 getSampleMix <- function(N_sample, pure_base, pure_sd, sigma, tauvec,
                          E.exp, E.unexp, med.pi, nonmed.pi, med_exp_pi,
                          med.sites, nonmed.sites, med_exp_M,
-                         is_pi_med, is_M_med){
+                         is_pi_med, is_M_med, beta_cov, covar1){
   K = ncol(pure_base) ## number of cell types
   p = nrow(pure_base) ## number of CpG sites
 
@@ -84,7 +84,7 @@ getSampleMix <- function(N_sample, pure_base, pure_sd, sigma, tauvec,
                              med.exp.M, med.sites, nonmed.sites, tauvec,
                              med = is_M_med)
     #tmp = tmp + matrix(rnorm(p*K,0,noise_sd),p,K)
-    obs.Y[,n] = tmp %*% trueProp[n,] + rnorm(p, 0, sigma)
+    obs.Y[,n] = tmp %*% trueProp[n,] + beta_cov * covar1[n,] + rnorm(p, 0, sigma)
     alltmp[,seq(n, n+N_sample*(K-1), by=N_sample)] = tmp
   }
   for(n in E.unexp){ #unexposed group - no relationship with mediator
@@ -92,7 +92,7 @@ getSampleMix <- function(N_sample, pure_base, pure_sd, sigma, tauvec,
                              med.exp.M, med.sites, nonmed.sites, tauvec,
                              med = FALSE)
     #tmp = tmp + matrix(rnorm(p*K,0,noise_sd),p,K)
-    obs.Y[,n] = tmp %*% trueProp[n,] + rnorm(p, 0, sigma)
+    obs.Y[,n] = tmp %*% trueProp[n,] + beta_cov * covar1[n,] + rnorm(p, 0, sigma)
     alltmp[,seq(n, n+N_sample*(K-1), by=N_sample)] = tmp
   }
 
@@ -106,13 +106,21 @@ getSampleMix <- function(N_sample, pure_base, pure_sd, sigma, tauvec,
 
 ## EM Function with bootstrap - Julia
 julia_command("
-    function IndefBoot(M, Y, E, beta0, beta1, prop, tausq,
-                      sigmasq, gammasq, theta0, theta1,
+    function IndefBoot(M, Y, E, covarmat, beta0, beta1, betacov, prop, tausq,
+                      sigmasq, gammasq, theta0, theta1, thetacov,
                       theta2; b=1000)
                       
         #= ========================= =#
         #= Define loops as functions =#
         #= ========================= =#
+
+        function calcbetacovars(Nsample,Ncell,betacov,covarmat)
+            betacovars = Array{Float64}(undef,Ncell,Nsample)
+                 for i in 1:Ncell
+                        betacovars[i,:] = sum(broadcast(*,betacov[i,:]',covarmat),dims=2)
+                 end
+            return betacovars
+        end
         
         function lobsfun(Nsample,Ymean,Yvar,Y,Mmean,Mvar,M)
             lobsf = 0
@@ -128,20 +136,30 @@ julia_command("
             Sigmastar = Array{Float64}(undef,Ncell,Ncell,Nsample)
             for i in 1:Nsample
                   Sigmastarinvterm2 = prop[i,:]*prop[i,:]' / sigmasq
+                  Sigmatemp = Sigmastarinvterm1 + Sigmastarinvterm2 + Sigmastarinvterm3
+                  if (det(Sigmatemp) <= eps())
+                    display(Sigmatemp)
+                    display(Sigmastarinvterm1)
+                    display(Sigmastarinvterm2)
+                    display(Sigmastarinvterm3)
+                  end
                   Sigmastar[:,:,i] = inv(Sigmastarinvterm1 + Sigmastarinvterm2 + Sigmastarinvterm3)
             end
             return Sigmastar
         end
         
-        function calcmustarsig(Nsample,Ncell,Y,theta0,theta1,theta2,gammasq,M,prop,
-                                sigmasq,beta0,beta1,E,tausq)
+        function calcmustarsig(Nsample,Ncell,Y,theta0,theta1,thetacov,theta2,gammasq,M,prop,covarmat,
+                                sigmasq,beta0,beta1,betacov,E,tausq)
               mustarsig = Array{Float64}(undef,Nsample,Ncell)
+              thetacovars = sum(broadcast(*,thetacov',covarmat),dims=2)
+              betacovars = calcbetacovars(Nsample,Ncell,betacov,covarmat)
+              
               for i in 1:Nsample
-                  term1 = ((Y[i] .- theta0 .- theta1 .* E[i]) .* theta2) / gammasq
+                  term1 = ((Y[i] .- theta0 .- theta1 .* E[i] - thetacovars[i]) .* theta2) / gammasq
                   term1 = copy(term1')
                   term2 = M[i] * prop[i,:] / sigmasq
                   term2 = copy(term2')
-                  term3 = copy((beta0 + beta1 * E[i])')*inv(diagm(vec(tausq')))
+                  term3 = copy((beta0 + beta1 * E[i] + betacovars[:,i])')*inv(diagm(vec(tausq')))
                   mustarsig[i,:] = term1 + term2 + term3
               end
               return mustarsig
@@ -166,58 +184,63 @@ julia_command("
         function calcsigmavec(Nsample,prop,Sigmastar,M,mustar)
             sigmavec = Array{Float64}(undef,Nsample)
             for i in 1:Nsample
-                sigmavec[i] = prop[i,:]'*Sigmastar[:,:,i]*prop[i,:] .+ (M[i] .-
-                mustar[i,:]'*prop[i,:]) .^2
+                sigmavec[i] = prop[i,:]'*Sigmastar[:,:,i]*prop[i,:] .+ (M[i] .- mustar[i,:]'*prop[i,:]) .^2
             end
             return sigmavec
         end
         
-        function calcgammavec(theta2new,Sigmastar,Y,theta0new,theta1new,mustar,E)
+        function calcgammavec(theta2new,Sigmastar,Y,theta0new,theta1new,thetacovnew,covarmat,mustar,E)
             gammavec = Array{Float64}(undef,Nsample)
+            thetacovars = sum(broadcast(*,thetacovnew',covarmat),dims=2)
             for i in 1:Nsample
-                gammavec[i] = theta2new'*Sigmastar[:,:,i]*theta2new .+
-                        (Y[i] - theta0new - theta1new*E[i] - (mustar[i,:]'*theta2new)[1]) ^2
+                gammavec[i] = theta2new'*Sigmastar[:,:,i]*theta2new .+ (Y[i] - theta0new - theta1new*E[i] - thetacovars[i] - (mustar[i,:]'*theta2new))^2
             end
             return gammavec
         end
         
-        function calctauvec(Nsample,Ncell,E,mustar,beta0new,beta1new,Sigmastar)
+        function calctauvec(Nsample,Ncell,E,mustar,beta0new,beta1new,betacovnew,covarmat,Sigmastar)
             tauvec = Array{Float64}(undef,Nsample,Ncell)
+            betacovars = calcbetacovars(Nsample,Ncell,betacovnew,covarmat)
+              
             for i in 1:Nsample, j in 1:Ncell
-                tauvec[i,j] = (mustar[i,j] - beta0new[j] - beta1new[j]*E[i])^2+
-                                      Sigmastar[:,:,i][j,j]
+                tauvec[i,j] = (mustar[i,j] - beta0new[j] - beta1new[j]*E[i] - betacovars[j,i])^2 + Sigmastar[:,:,i][j,j]
             end
             return tauvec
         end
+        
         
         #= ========================= =#
         #= Define EM Function        =#
         #= ========================= =#
         
-                function CTMEM(M, Y, E, beta0, beta1, prop, tausq,
-                              sigmasq, gammasq, theta0, theta1,
+                function CTMEM(M, Y, E, covarmat, beta0, beta1, betacov, prop, tausq,
+                              sigmasq, gammasq, theta0, theta1, thetacov,
                               theta2; maxiter=500, tol=0.001)
                 iter = 1
                 err = 2000
                 Nsample = length(Y)
                 Ncell = size(prop)[2]
+                Ncov = size(covarmat)[2]
                 Emat = repeat(E,1,Ncell)
                 
                           #= ========================== =#
                           #= Define likelihood Function =#
                           #= ========================== =#
                           
-                          function calc_lobs(M, Y, E, beta0, beta1, prop, tausq,
-                                sigmasq, gammasq, theta0, theta1,theta2)
+                          function calc_lobs(M, Y, E, covarmat, beta0, beta1, betacov, prop, tausq,
+                                sigmasq, gammasq, theta0, theta1, thetacov, theta2)
                                 Nsample = length(Y)
                                 Ncell = size(prop)[2]
+                                Ncov = size(covarmat)[2]
                                 Emat = repeat(E,1,Ncell)
                                 
                                 # calculate observed likelihood terms
                                 beta1E = Emat .* beta1'
-                                beta0beta1E = beta1E .+ beta0'
+                                betacovars = calcbetacovars(Nsample,Ncell,betacov,covarmat)
+                                beta0beta1E = beta1E .+ beta0' + betacovars'
                                 theta2beta = beta0beta1E .* theta2'
-                                Ymean = theta0 .+ theta1 .* E .+ sum(theta2beta,dims=2)
+                                thetacovars = sum(broadcast(*,thetacov',covarmat),dims=2)
+                                Ymean = theta0 .+ theta1 .* E .+ thetacovars .+ sum(theta2beta,dims=2)
                                 Yvar = sum(theta2' .^2 .* tausq') + gammasq
                                 Mmean = sum(beta0beta1E .* prop,dims=2)
                                 Mvar = sum(prop .^ 2 .* tausq',dims=2) .+ sigmasq
@@ -227,8 +250,8 @@ julia_command("
                           end  ### end likelihood function
                           
                 # initialize likelihood for EM
-                lobsi = calc_lobs(M, Y, E, beta0, beta1, prop, tausq,
-                       sigmasq, gammasq, theta0, theta1, theta2)
+                lobsi = calc_lobs(M, Y, E, covarmat, beta0, beta1, betacov, prop, tausq,
+                       sigmasq, gammasq, theta0, theta1, thetacov, theta2)
                        
                 while iter<=maxiter && err>=tol
                 
@@ -239,10 +262,9 @@ julia_command("
                     #calculate mu* and sigma* (mean and variance of conditional distribution of m_k)
                       Sigmastarinvterm1 = theta2*theta2' / gammasq
                       Sigmastarinvterm3 = inv(diagm(vec(tausq')))
-                      Sigmastar = calcSigmastar(Nsample,Ncell,prop,sigmasq,Sigmastarinvterm1,
-                                                                      Sigmastarinvterm3)
-                      mustarsig = calcmustarsig(Nsample,Ncell,Y,theta0,theta1,theta2,gammasq,M,prop,
-                                sigmasq,beta0,beta1,E,tausq)
+                      Sigmastar = calcSigmastar(Nsample,Ncell,prop,sigmasq,Sigmastarinvterm1,Sigmastarinvterm3)
+                      mustarsig = calcmustarsig(Nsample,Ncell,Y,theta0,theta1,thetacov,theta2,gammasq,M,prop,
+                                covarmat,sigmasq,beta0,beta1,betacov,E,tausq)
                       mustar = calcmustar(Nsample,Ncell,mustarsig,Sigmastar)
                       
                     #= ======= =#
@@ -250,27 +272,56 @@ julia_command("
                     #= ======= =#
                     
                     # beta0 update
-                    beta1E = Emat .* beta1'
+                    betacovars = calcbetacovars(Nsample,Ncell,betacov,covarmat)
+                    beta1E = Emat .* beta1' - betacovars'
                     beta0new = sum(mustar-beta1E,dims=1) / Nsample
                     beta0new = dropdims(beta0new';dims=2)
                     
                     # beta1 update
                     beta0mat = repeat(beta0new',Nsample,1)
-                    beta1new = sum((mustar-beta0mat) .* Emat, dims=1) ./ sum(Emat .^ 2,dims=1)
+                    beta1new = sum((mustar-beta0mat-betacovars') .* Emat, dims=1) ./ sum(Emat .^ 2,dims=1)
                     beta1new = dropdims(beta1new';dims=2)
                     
+                    # betacov update
+                    beta1Enew = Emat .* beta1new'
+                    X1mat = repeat(covarmat[:,1],1,Ncell)
+                    betacovnew = Array{Float64}(undef,Ncell,Ncov)
+                    betanoup1 = calcbetacovars(Nsample,Ncell,betacov[:,2:end],covarmat[:,2:end])
+                    betacovnew[:,1] = sum((mustar-beta0mat-beta1Enew-betanoup1') .* X1mat, dims=1) ./ sum(X1mat .^ 2, dims=1)
+                    
+                    for i in 2:Ncov
+                      betaup = calcbetacovars(Nsample,Ncell,betacovnew[:,1:(i-1)],covarmat[:,1:(i-1)])
+                      betanoup = calcbetacovars(Nsample,Ncell,betacov[:,i:Ncov],covarmat[:,i:Ncov])
+                      Xmat = repeat(covarmat[:,i],1,Ncell)
+                      betacovnew[:,i] = sum((mustar-beta0mat-beta1Enew-betaup'-betanoup') .* Xmat, dims=1) ./ sum(Xmat .^ 2, dims=1)
+                    end
+                    
                     # theta0 update
+                    thetacovars = sum(broadcast(*,thetacov',covarmat),dims=2)
                     mutheta2 = mustar .* theta2'
-                    theta0new = sum(Y .- theta1 .* E - sum(mutheta2,dims=2)) / Nsample
+                    theta0new = sum(Y .- theta1 .* E - thetacovars - sum(mutheta2,dims=2)) / Nsample
                     
                     # theta1 update
-                    theta1new = sum((Y .- theta0new - sum(mutheta2,dims=2)) .* E) / sum(E .^ 2)
+                    theta1new = sum((Y .- theta0new - thetacovars - sum(mutheta2,dims=2)) .* E) / sum(E .^ 2)
+                    
+                    # thetacov update
+                    thetacovnew = Array{Float64}(undef,Ncov)
+                    thetanoup1 = sum(broadcast(*,thetacov',covarmat[:,1]),dims=2)
+                    thetacovnew[1] = sum((Y .- theta0new - theta1new .* E - thetanoup1 - sum(mutheta2,dims=2)) .* covarmat[:,1]) / sum(covarmat[:,1] .^ 2)
+                    
+                    for i in 2:Ncov
+                      thetaup = sum(broadcast(*,thetacovnew[1:(i-1)]',covarmat[:,1:(i-1)]),dims=2)
+                      thetanoup = sum(broadcast(*,thetacov[i:end]',covarmat[:,i:end]),dims=2)
+                      thetacovnew[i] = sum((Y .- theta0new - theta1new .* E - thetaup - thetanoup - sum(mutheta2,dims=2)) .* covarmat[:,i]) / sum(covarmat[:,i] .^ 2)
+                    end
+                    
                     
                     # theta2 update
                       # denominator
                       theta2denom = calctheta2denom(Nsample,Ncell,Sigmastar,mustar)
                       denom = inv(dropdims(sum(theta2denom,dims=3);dims=3))
-                    numer = (Y .- theta0new .- theta1new .* E) .* mustar
+                    thetacovarsnew = sum(broadcast(*,thetacovnew',covarmat),dims=2)
+                    numer = (Y .- theta0new .- theta1new .* E - thetacovarsnew) .* mustar
                     theta2new = sum(numer,dims=1)*denom
                     theta2new = dropdims(theta2new';dims=2)
                     
@@ -279,26 +330,29 @@ julia_command("
                     sigmasqnew = sum(sigmavec) / Nsample
                     
                     # gamma^2 update
-                    gammavec = calcgammavec(theta2new,Sigmastar,Y,theta0new,theta1new,mustar,E)
+                    gammavec = calcgammavec(theta2new,Sigmastar,Y,theta0new,theta1new,thetacovnew,covarmat,
+                                                mustar,E)
                     gammasqnew = sum(gammavec) / Nsample
                     
                     # tau^2 update
-                    tauvec = calctauvec(Nsample,Ncell,E,mustar,beta0new,beta1new,Sigmastar)
+                    tauvec = calctauvec(Nsample,Ncell,E,mustar,beta0new,beta1new,betacovnew,covarmat,Sigmastar)
                     tausqnew = sum(tauvec,dims=1) / Nsample
                     tausqnew = dropdims(tausqnew';dims=2)
                     
                     # Evaluate new observed log-likelihood
-                        lobsnew = calc_lobs(M, Y, E, beta0new, beta1new, prop,
+                        lobsnew = calc_lobs(M, Y, E, covarmat, beta0new, beta1new, betacovnew, prop,
                                        tausqnew, sigmasqnew, gammasqnew,
-                                       theta0new, theta1new, theta2new)
+                                       theta0new, theta1new, thetacovnew, theta2new)
                 
                 err = abs(lobsnew - lobsi)
                 #Core.println(lobsnew)
                 #set new params
                 beta0 = beta0new
                 beta1 = beta1new
+                betacov = betacovnew
                 theta0 = theta0new
                 theta1 = theta1new
+                thetacov = thetacovnew
                 theta2 = theta2new
                 tausq = tausqnew
                 sigmasq = sigmasqnew
@@ -308,24 +362,25 @@ julia_command("
                 
                 end
                 
-                return beta0, beta1, theta0, theta1, theta2, tausq, sigmasq, gammasq, iter
+                return beta0, beta1, betacov, theta0, theta1, thetacov, theta2, tausq, sigmasq, gammasq, iter
                 end # End EM Function
                 
         #= ========================= =#
         #= Define Bootstrap Function =#
         #= ========================= =#
-        function calcboot(b,E,Y,M,Nsample,Ncell, beta0, beta1, prop, tausq,
-                sigmasq, gammasq, theta0, theta1, theta2)
+        function calcboot(b,E,Y,M,covarmat,Nsample,Ncell, beta0, beta1, betacov, prop, tausq,
+                sigmasq, gammasq, theta0, theta1, thetacov, theta2)
             indefb::SharedArray{Float64,2}=zeros(b,Ncell)
             @sync @distributed for i in 1:b
               theIndex = sample(1:Nsample,Nsample,replace=true)
               Eb = E[theIndex]
               Yb = Y[theIndex]
               Mb = M[theIndex]
+              covb = covarmat[theIndex,:]
               propb = prop[theIndex,:]
-              EMboot = CTMEM(Mb, Yb, Eb, beta0, beta1, propb, tausq,
-                sigmasq, gammasq, theta0, theta1, theta2)
-              indefb[i,:] = EMboot[2] .* EMboot[5]
+              EMboot = CTMEM(Mb, Yb, Eb, covb, beta0, beta1, betacov, propb, tausq,
+                sigmasq, gammasq, theta0, theta1, thetacov, theta2)
+              indefb[i,:] = EMboot[2] .* EMboot[7]
             end
             
             #display(indefb)
@@ -334,11 +389,13 @@ julia_command("
         
         Ncell = size(prop)[2]
         Nsample = size(prop)[1]
-        myindefb = calcboot(b,E,Y,M,Nsample,Ncell, beta0, beta1, prop, tausq,
-                sigmasq, gammasq, theta0, theta1, theta2)
-        EMout = CTMEM(M, Y, E, beta0, beta1, prop, tausq,
-               sigmasq, gammasq, theta0, theta1, theta2)
-        ObsIE = EMout[2] .* EMout[5]
+        myindefb = calcboot(b,E,Y,M,covarmat,Nsample,Ncell, beta0, beta1, betacov, prop, tausq,
+                sigmasq, gammasq, theta0, theta1, thetacov, theta2)
+        EMout = CTMEM(M, Y, E, covarmat, beta0, beta1, betacov, prop, tausq,
+               sigmasq, gammasq, theta0, theta1, thetacov, theta2)
+        ObsIE = EMout[2] .* EMout[7]
+        Obsbeta = EMout[3]
+        Obstheta = EMout[6]
         
         function getquant(indefb,Ncell)
             bootint = Array{Float64}(undef,2,Ncell)
@@ -368,19 +425,23 @@ julia_command("
         
         indefSig = calcindefsig(Ncell,mybootint)
         
-        return indefSig, ObsIE, mybootint, mybootpvals
+        return indefSig, ObsIE, mybootint, mybootpvals, Obsbeta, Obstheta
+        
 end")
 
 
 julia_command("
-    function EMBoot(M, Y, E, coefs, prop, medpi, initmethod, thetaEffect, toasttheta2)
+    function EMBoot(M, Y, E, coefs, prop, covarmat, medpi, initmethod, thetaEffect, toasttheta2)
 
 
     Ncpg = size(coefs)[2]
     Ncell = size(prop)[2]
+    Ncov = size(covarmat)[2]
     BootSig = Array{Float64}(undef,Ncpg,Ncell)
     Bootpvals = Array{Float64}(undef,Ncpg,Ncell)
-
+    #thetaout = Array{Float64}(undef,Ncpg,Ncov)
+    #betaout = Array{Float64}(undef,Ncpg,Ncell,Ncov)
+    
     # set initial values
 
     tausq = repeat(rand(InverseGamma(5,0.004),1),Ncell)
@@ -388,6 +449,7 @@ julia_command("
     gammasq = rand(InverseGamma(5,0.004),1)[1]
     theta0 = 0
     theta1 = 0
+    thetacov = zeros(Ncov)
     
     if initmethod == \"rand\"
         theta2 = rand(Normal(0.3,0.05),Ncell)
@@ -405,12 +467,16 @@ julia_command("
 
           beta0 = coefs[1:Ncell,i]
           beta1 = coefs[(Ncell+1):(2*Ncell),i]
+          betacov = reshape(coefs[(2*Ncell+1):size(coefs)[1],i],Ncell,Ncov)
           #theta2 = toasttheta2[i,:]
            
-          myres = IndefBoot(M[i,:], Y, E, beta0, beta1, prop, tausq,
-                       sigmasq, gammasq, theta0, theta1, theta2)
+          myres = IndefBoot(M[i,:], Y, E, covarmat, beta0, beta1, betacov, prop, tausq,
+                       sigmasq, gammasq, theta0, theta1, thetacov, theta2)
           BootSig[i,:] = myres[1]
           Bootpvals[i,:] = myres[4]
+          #thetaout[i,:] = myres[6]
+          #betaout[i,:,:] = myres[5]
+          
     end
 
     return BootSig, Bootpvals
@@ -418,11 +484,12 @@ julia_command("
 end")
 
 
-getIE <- function(O,E,est.Mik){
+getIE <- function(O,E,covmat,est.Mik){
   Ncell <- length(est.Mik)
   med_num_M <- dim(est.Mik[[1]])[1]
   Nsample <- dim(est.Mik[[1]])[2]
-  
+  Ncov <- ncol(covmat)
+  print(Ncov)
   Mikmat <- matrix(NA,nrow=Nsample,ncol=Ncell*med_num_M)
   
   for(i in 1:Ncell){
@@ -434,26 +501,26 @@ getIE <- function(O,E,est.Mik){
   for(i in 1:med_num_M){
     betas <- matrix(NA,Ncell,1)
     for(j in 1:Ncell){
-      medmod <- summary(fastLm(est.Mik[[j]][i,]~E))
+      medmod <- summary(fastLm(est.Mik[[j]][i,]~E+covmat))
       betas[j,] <- medmod$coefficients[2,1]
     }
     
-    outmod <- summary(fastLm(O~E+Mikmat[,seq(i,Ncell*med_num_M,by=med_num_M)]))
-    theta2 <- matrix(outmod$coefficients[3:(Ncell+2),1],nrow=1,ncol=Ncell)
+    outmod <- summary(fastLm(O~E+covmat+Mikmat[,seq(i,Ncell*med_num_M,by=med_num_M)]))
+    theta2 <- matrix(outmod$coefficients[(3+Ncov):(Ncell+Ncov+2),1],nrow=1,ncol=Ncell)
     obsIE[i,] <- betas*t(theta2)
   }
   return(list(betas=betas,theta2=theta2,obsIE=obsIE))
 }
 
-getTOAST <- function(E,O,M,prop){
+getTOAST <- function(E,O,M,prop,covmat){
   Ncell <- dim(prop)[2]
-  design <- data.frame(E = as.factor(E))
+  design <- data.frame(E = as.factor(E),covmat)
   Design_out <- makeDesign(design, prop)
   fm <- fitModel(Design_out, M)
   allbetas <- fm$coefs
   betas <- fm$coefs[(Ncell+1):(2*Ncell),] ## dim: 2*Ncell X NCpG
   
-  design2 <- data.frame(O=O,E = as.factor(E))
+  design2 <- data.frame(O=O,E = as.factor(E),covmat)
   Design_out2 <- makeDesign(design2, prop)
   fm2 <- fitModel(Design_out2, M)
   thetas <- fm2$coefs[(Ncell+1):(2*Ncell),] ## dim: 2*Ncell X NCpG
@@ -462,4 +529,3 @@ getTOAST <- function(E,O,M,prop){
   
   return(list(allbetas=allbetas,betas=betas,thetas=thetas,indef=indef))
 }
-

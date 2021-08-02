@@ -51,6 +51,7 @@ julia_command("addprocs(7)")
 julia_command("@everywhere using Distributions")
 julia_command("@everywhere using LinearAlgebra")
 julia_command("@everywhere using SharedArrays")
+julia_command("@everywhere using Random")
 
 library(RcppEigen)
 library(TOAST)
@@ -103,7 +104,12 @@ pure.sd0 = pure.sd[,1:Ncell]
 #--------------------------------------
 
 #exposure vector
-E <- c(rep(1,Nsample/2),rep(0,Nsample/2))
+set.seed(myseed)
+covar1 <- matrix(rnorm(Nsample),nrow=Nsample,ncol=1)
+Ncov <- ncol(covar1)
+probs <- plogis(3*covar1)
+E <- rbinom(Nsample,1,probs)
+#E <- c(rep(1,Nsample/2),rep(0,Nsample/2))
 E.exp <- which(E==1)
 E.unexp <- which(E==0)
 
@@ -141,7 +147,7 @@ tau <- sigma
   
   ## Generate mediation effect size vector for sites, this links trueMethy to E.
   ## I'll make one non-zero entry for each site
-  beta_effect <- runif(1,0.1,0.4)
+  beta_effect <- runif(1,0.1,0.5)
   med.exp.M <- matrix(0, nrow=length(med.sites), ncol=Ncell)
   for(i in 1:nrow(med.exp.M)) {
     med.exp.M[i, med.pi] = beta_effect
@@ -149,13 +155,14 @@ tau <- sigma
   beta[n_sim,] <- med.exp.M
   
   ## changed 2/8 so that multiple sites can have same cell type mediator
-  theta_effect <- runif(1,0.1,0.4)
+  theta_effect <- runif(1,0.1,0.5)
   cpg.celltype.thetas <- matrix(0,length(med.sites),Ncell)
   for(i in 1:nrow(cpg.celltype.thetas)) {
     cpg.celltype.thetas[i, med.pi] = theta_effect
   }
   
   direct_effect <- runif(1,0.01,0.05)
+  beta_cov <- runif(1,0.01,0.05)
   
   #-------------------------------------
   #  Generate Observed Data
@@ -168,11 +175,11 @@ tau <- sigma
                      sigma, tauvec,
                      E.exp, E.unexp, med.pi, nonmed.pi, med_exp_pi,
                      med.sites, nonmed.sites, med.exp.M,
-                     is_pi_med, is_M_med)
+                     is_pi_med, is_M_med, beta_cov, covar1)
   Y.raw = out$obs.Y ## observed DNA methylation samples
   trueProp = out$trueProp ## proportions in samples
   trueMethy = out$trueMethy ## full true Methylation (M*pi)
-  
+
   #-------------------------------------
   #  Generate Outcome
   #-------------------------------------
@@ -200,11 +207,11 @@ tau <- sigma
   #print(sites)
   #nsites <- length(sites)
   M <- matrix(Y.raw[med.sites,],ncol=Nsample)
-  coefs <- getTOAST(E,O,M,trueProp)$allbetas #get initial values for beta from TOAST
-  coefs.EM <- matrix(coefs,nrow=Ncell*2) #will need to change w/ covariates
+  coefs <- getTOAST(E,O,M,trueProp,covar1)$allbetas #get initial values for beta from TOAST
+  coefs.EM <- matrix(coefs,nrow=Ncell*(Ncov+2)) #will need to change w/ covariates
   Prop <- trueProp
   
-  design2 <- data.frame(O=O,E = as.factor(E))
+  design2 <- data.frame(O=O,E = as.factor(E),covar1)
   Design_out2 <- makeDesign(design2, Prop)
   fm2 <- fitModel(Design_out2, M)
   res <- csTest(fm2, coef=c("O"), sort = FALSE)
@@ -224,46 +231,26 @@ tau <- sigma
   initmethod <- "toast"
   # myres_toast <- julia_call("EMBoot", M, O, E, coefs.EM, Prop, med.pi, initmethod, theta_effect, theta2.toast)
   # EMpvals_toast[sim,] <- myres_toast[[2]]
-  myres_hybrid <- julia_call("EMBoot", M, O, E, coefs.EM, Prop, med.pi, initmethod, theta_effect, theta2.toast1)
-  #EMpvals_hybrid[sim,] <- myres_hybrid[[2]]
+  myres_hybrid <- julia_call("EMBoot", M, O, E, coefs.EM, Prop, covar1, med.pi, initmethod, theta_effect, theta2.toast1)
+  
+  EMpvals_hybrid[sim,] <- myres_hybrid[[2]]
   
   
-  # print(Sys.time()-time1)
-  #print(sig.list[[sim]])
-  
-  
-  # rownames(trueProp) <- colnames(M) <- 1:Nsample
-  # colnames(trueProp) <- 1:Ncell
-  # rownames(M) <- 1:med_num_M
-  # 
-  # tca.mod <- tca(M,trueProp,verbose=FALSE)
-  # est.Mik <- tensor(M,tca.mod,verbose=FALSE) #estimated M_ik values (list of length Ncell, each of length Nsite)
-  # 
-  # summary(fastLm(O~E+t(est.Mik[[1]])+t(est.Mik[[2]])+t(est.Mik[[3]])+t(est.Mik[[4]])))
-  
+
   # #---------------------------------------------
   # #  Competing methods
   # #---------------------------------------------
 
-  # dat <- data.frame(E=E,O=O,M=t(M),prop=trueProp)
-  # time0 <- Sys.time()
-  # myboot1 <- function(dat,i,med_num_M,Ncell){
-  #   .dat <- dat[i,]
-  #   getTOAST(.dat[,1],.dat[,2],t(matrix(.dat[,3:(3+med_num_M-1)])),.dat[,(3+med_num_M):(2+med_num_M+Ncell)])$indef
-  #   
-  # }
-  # test1 <- boot(dat, myboot1, R = 1000, med_num_M = med_num_M, Ncell=Ncell, parallel = "multicore", ncpus=8)
-  # toastres <- lapply(1:Ncell, function(x2) boot.ci(boot.out = test1, conf = 0.9875, type = "perc", index = x2)$percent)
-  
   
   time0 <- Sys.time()
-  dat <- data.frame(E=E,O=O,M=t(M),prop=trueProp)
+  dat <- data.frame(E=E,O=O,M=t(M),prop=trueProp,covar=covar1)
   conf_level <- 1-(.05/(Ncell*med_num_M))
-  myboot2 <- function(dat,i,Ncell,med_num_M){
+  myboot2 <- function(dat,i,Ncell,med_num_M,Ncov){
     Nsample <- nrow(dat)
     .dat <- dat[i,]
     Mb <- matrix(.dat[,3:(3+med_num_M-1)],nrow=med_num_M,ncol=Nsample)
     propb <- as.matrix(.dat[,(3+med_num_M):(2+med_num_M+Ncell)],nrow=Nsample,ncol=Ncell)
+    covmatb <- matrix(.dat[,(Ncell+3+med_num_M):ncol(.dat)],nrow=Nsample,ncol=Ncov)
     rownames(propb) <- colnames(Mb) <- 1:Nsample
     colnames(propb) <- 1:Ncell
     rownames(Mb) <- 1:med_num_M
@@ -271,9 +258,9 @@ tau <- sigma
     tca.modb <- tca(Mb,propb,verbose=FALSE)
     est.Mikb <- tensor(Mb,tca.modb,verbose=FALSE) #estimated M_ik values (list of length Ncell, each of length Nsite)
     
-    getIE(.dat[,2],.dat[,1],est.Mikb)$obsIE
+    getIE(.dat[,2],.dat[,1],covmatb,est.Mikb)$obsIE
   }
-  test2 <- boot(dat, myboot2, R = 1000, Ncell = Ncell, med_num_M = med_num_M, parallel = "multicore", ncpus=8)
+  test2 <- boot(dat, myboot2, R = 1000, Ncell = Ncell, med_num_M = med_num_M, Ncov = Ncov, parallel = "multicore", ncpus=8)
   #tcares <- lapply(1:Ncell, function(x2) boot.ci(boot.out = test2, conf = conf_level, type = "perc", index = x2)$percent)
   TCApvals.tmp <- matrix(NA,length(med.sites),Ncell)
   for(i in 1:Ncell){
@@ -285,29 +272,12 @@ tau <- sigma
 
 
 
-
-  # bootSig <- matrix(NA,nrow=1,ncol=Ncell)
-  # for(i in 1:Ncell){
-  #   bootSig[1,i] <- ifelse(0>tcares[[i]][4]&0<tcares[[i]][5],0,1)
-  #   #bootSig[2,i] <- ifelse(0>toastres[[i]][4]&0<toastres[[i]][5],0,1)
-  # }
-  # 
-  # ## MICS
-  # 
-  # #load example data
-  # data(example_data)
-  # 
-  # #perform mics
-  # out <- mics(meth_data = Ometh, S = S, X = X, Y = Y, cell_prop = P_matr,
-  #             MCP.type = "FDR", maxp_sq = TRUE)
-
-  X.cov <- matrix(rnorm(Nsample),nrow=Nsample,ncol=1)
-  out <- mics(meth_data = Y.raw, S = E, X = X.cov, Y = O, cell_prop = t(trueProp))
+  #X.cov <- matrix(rnorm(Nsample),nrow=Nsample,ncol=1)
+  out <- mics(meth_data = Y.raw, S = E, X = covar1, Y = O, cell_prop = t(trueProp))
    
   pval_MultiMed[sim,] <- out$pval_joint_MultiMed[med.sites,]
   #micSig <- ifelse(pval_MultiMed[med.sites,]<.05,1,0)
-  #comp.sig[[sim]] <- rbind(bootSig,micSig)
-  
+
 
 } #end sim
 
@@ -325,4 +295,4 @@ write.table(EMpvals_hybrid, filename1d, append=TRUE, row.names = FALSE, col.name
 write.table(TCApvals, filename2, append=TRUE, row.names = FALSE, col.names = FALSE, quote = FALSE)
 write.table(pval_MultiMed, filename3, append=TRUE, row.names = FALSE, col.names = FALSE, quote = FALSE)
 
-write.table(beta,"betas",append = TRUE, row.names = FALSE, col.names = FALSE, quote = FALSE)
+#write.table(beta,"betas",append = TRUE, row.names = FALSE, col.names = FALSE, quote = FALSE)
